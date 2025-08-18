@@ -5,7 +5,7 @@ import { useProjectStore } from '../stores/projectStore';
 
 const ProjectList: React.FC = () => {
   const navigate = useNavigate();
-  const { projects, setCurrentProject } = useProjectStore();
+  const { projects, setCurrentProject, createProject } = useProjectStore();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -19,42 +19,20 @@ const ProjectList: React.FC = () => {
 
     const [width, height] = formData.resolution.split('x').map(Number);
 
-    // Create project locally without API call
-    const newProject = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: formData.name,
-      tracks: [
-        {
-          id: Math.random().toString(36).substr(2, 9),
-          name: 'Video Track 1',
-          type: 'video' as const,
-          clips: [],
-          enabled: true
-        },
-        {
-          id: Math.random().toString(36).substr(2, 9),
-          name: 'Audio Track 1',
-          type: 'audio' as const,
-          clips: [],
-          enabled: true
-        }
-      ],
-      duration: 0,
-      resolution: { width, height },
-      fps: Number(formData.fps)
-    };
+    try {
+      // Use the store's createProject method which calls the backend API
+      await createProject(formData.name, { width, height }, Number(formData.fps));
 
-    // Add to store locally
-    useProjectStore.setState(state => ({
-      projects: [...state.projects, newProject],
-      currentProject: newProject
-    }));
+      // The store will automatically update currentProject
+      // Navigate to the editor (the project will be loaded automatically)
+      navigate('/editor');
 
-    setShowCreateForm(false);
-    setFormData({ name: '', resolution: '1920x1080', fps: '30' });
-
-    // Navigate to the new project
-    navigate(`/editor/${newProject.id}`);
+      setShowCreateForm(false);
+      setFormData({ name: '', resolution: '1920x1080', fps: '30' });
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      // You could add error handling UI here
+    }
   };
 
   const handleProjectClick = (projectId: string) => {

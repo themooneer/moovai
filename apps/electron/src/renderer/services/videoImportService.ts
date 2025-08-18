@@ -186,7 +186,8 @@ export class VideoImportService {
    */
   async extractVideoMetadata(clip: VideoClip): Promise<any> {
     try {
-      const response = await videoAPI.getInfo(clip.id);
+      // Use the clip's file path instead of ID for the API call
+      const response = await videoAPI.getInfo(clip.path);
       return {
         id: clip.id,
         name: clip.name,

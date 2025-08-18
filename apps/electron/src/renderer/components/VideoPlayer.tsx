@@ -1,6 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoProject } from '../types';
 
+// Utility function to construct full video URL
+const getVideoUrl = (path: string): string => {
+  // If path already has http/https, return as is
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+
+  // Construct full URL from backend server
+  return `http://localhost:3001/${path}`;
+};
+
 interface VideoPlayerProps {
   project: VideoProject | null;
   currentTime?: number;
@@ -69,7 +80,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
         {firstVideoClip ? (
           <video
             ref={videoRef}
-            src={firstVideoClip.path}
+            src={getVideoUrl(firstVideoClip.path)}
             className="w-full h-auto max-h-[70vh] rounded-xl shadow-2xl"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}

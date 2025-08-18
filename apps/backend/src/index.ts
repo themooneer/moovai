@@ -33,7 +33,7 @@ app.use(express.json());
 app.use('/uploads', express.static('uploads', {
   setHeaders: (res, path) => {
     // Set proper headers for video files
-    if (path.endsWith('.mp4') || path.endsWith('.avi') || path.endsWith('.mov') || 
+    if (path.endsWith('.mp4') || path.endsWith('.avi') || path.endsWith('.mov') ||
         path.endsWith('.mkv') || path.endsWith('.wmv') || path.endsWith('.flv') ||
         path.endsWith('.webm') || path.endsWith('.m4v') || path.endsWith('.3gp') ||
         path.endsWith('.ogv')) {
@@ -47,6 +47,31 @@ app.use('/uploads', express.static('uploads', {
 app.use('/api/video', videoRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/project', projectRoutes);
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    // Check if FFmpeg is available
+    const { execSync } = require('child_process');
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    execSync('ffprobe -version', { stdio: 'ignore' });
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      ffmpeg: 'available',
+      uploadsDir: path.join(process.cwd(), 'uploads'),
+      projectsDir: path.join(process.cwd(), 'projects')
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      ffmpeg: 'unavailable',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
 // WebSocket setup
 setupWebSocket(wss);

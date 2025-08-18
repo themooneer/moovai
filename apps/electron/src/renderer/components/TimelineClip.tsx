@@ -1,6 +1,17 @@
 import React from 'react';
 import { VideoClip } from '../types';
 
+// Utility function to construct full URL for media files
+const getMediaUrl = (path: string): string => {
+  // If path already has http/https, return as is
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  
+  // Construct full URL from backend server
+  return `http://localhost:3001/${path}`;
+};
+
 interface TimelineClipProps {
   clip: VideoClip;
   zoom: number;
@@ -95,7 +106,7 @@ const TimelineClip: React.FC<TimelineClipProps> = ({
         {clip.thumbnail && (
           <div className="absolute inset-0 opacity-30 pointer-events-none rounded-xl overflow-hidden">
             <img
-              src={clip.thumbnail}
+              src={getMediaUrl(clip.thumbnail)}
               alt={clip.name}
               className="w-full h-full object-cover"
             />

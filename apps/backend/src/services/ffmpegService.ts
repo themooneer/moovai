@@ -1,13 +1,27 @@
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegStatic from 'ffmpeg-static';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { FFmpegOperation, VideoProcessingResult } from '@ai-video-editor/shared';
 import { generateId } from '@ai-video-editor/shared';
 
-// Set ffmpeg path
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
+// Check if system FFmpeg is available, otherwise fall back to static version
+try {
+  // Try to use system FFmpeg first
+  const { execSync } = require('child_process');
+  execSync('ffmpeg -version', { stdio: 'ignore' });
+  execSync('ffprobe -version', { stdio: 'ignore' });
+  console.log('✅ Using system-installed FFmpeg');
+} catch (error) {
+  // Fall back to static FFmpeg if system version is not available
+  try {
+    const ffmpegStatic = require('ffmpeg-static');
+    if (ffmpegStatic) {
+      ffmpeg.setFfmpegPath(ffmpegStatic);
+      console.log('⚠️  Using static FFmpeg (system version not found)');
+    }
+  } catch (staticError) {
+    console.error('❌ No FFmpeg available - video processing will fail');
+  }
 }
 
 export class FFmpegService {
@@ -137,6 +151,15 @@ export class FFmpegService {
           if (audioPath) {
             command = command.input(audioPath);
           }
+          break;
+
+        case 'thumbnail':
+          const { time = 1 } = operation.parameters;
+          // Extract a single frame at the specified time
+          command = command
+            .seekInput(time)
+            .frames(1)
+            .outputOptions(['-vcodec mjpeg', '-q:v 2']);
           break;
       }
 

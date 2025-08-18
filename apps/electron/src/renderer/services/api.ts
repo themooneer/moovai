@@ -61,7 +61,9 @@ export const videoAPI = {
   },
 
   getInfo: (videoId: string) => {
-    return api.get(`/api/video/info/${videoId}`);
+    // URL-encode the videoId to handle file paths with forward slashes
+    const encodedId = encodeURIComponent(videoId);
+    return api.get(`/api/video/info/${encodedId}`);
   },
 
   process: (inputPath: string, outputPath: string, operations: any[]) => {

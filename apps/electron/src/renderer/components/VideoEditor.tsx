@@ -19,6 +19,7 @@ const VideoEditor: React.FC = () => {
   const [importProgress, setImportProgress] = useState<number>(0);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const cleanupDragAndDropRef = useRef<(() => void) | null>(null);
+  const [pendingClip, setPendingClip] = useState<VideoClip | null>(null);
 
   const handleAIMessage = async (content: string) => {
     await sendMessage(content, currentProject);
@@ -90,17 +91,19 @@ const VideoEditor: React.FC = () => {
     try {
       // Create project if none exists
       if (!currentProject) {
+        console.log('🔄 No project exists, creating new project...');
         await createProject('Untitled Project', { width: 1920, height: 1080 }, 30);
-      }
-
-      // Add video clip to the first video track
-      if (currentProject) {
+        console.log('✅ Project creation completed, setting pending clip...');
+        // Store the clip to add after project creation
+        setPendingClip(clip);
+      } else {
+        console.log('📁 Project exists, adding clip to existing project...');
+        // Add video clip to existing project
         const videoTrack = currentProject.tracks.find(track => track.type === 'video');
         if (videoTrack) {
           addClipToTrack(videoTrack.id, clip);
         } else {
           // Create video track if none exists
-          // This will be handled by the project store
           addClipToTrack('default', clip);
         }
 
@@ -166,6 +169,31 @@ const VideoEditor: React.FC = () => {
       setImportProgress(0);
     }
   };
+
+  // Effect to add pending clip after project creation
+  useEffect(() => {
+    if (pendingClip && currentProject) {
+      const handlePendingClip = async () => {
+        try {
+          // Add the clip to the project
+          addClipToTrack('default', pendingClip);
+
+          // Save the project with the new clip
+          await saveProject(currentProject);
+
+          // Clear pending clip after successful save
+          setPendingClip(null);
+
+          console.log('✅ Project created and saved with video clip:', currentProject.id);
+        } catch (error) {
+          console.error('❌ Failed to save project with clip:', error);
+          setImportError('Failed to save project with video clip');
+        }
+      };
+
+      handlePendingClip();
+    }
+  }, [currentProject, pendingClip, addClipToTrack, saveProject]);
 
   if (!currentProject) {
     return (

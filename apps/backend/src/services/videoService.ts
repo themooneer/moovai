@@ -58,10 +58,10 @@ export class VideoService {
         `thumb_${path.basename(filePath, path.extname(filePath))}.jpg`
       );
 
-      // Generate thumbnail at 1 second mark
+      // Generate thumbnail at 1 second mark using a simpler approach
       await this.ffmpegService.executeOperation({
         id: generateId(),
-        type: 'overlay',
+        type: 'thumbnail',
         parameters: { time: 1 },
         inputFile: filePath,
         outputFile: thumbnailPath,
@@ -71,6 +71,7 @@ export class VideoService {
       return thumbnailPath;
     } catch (error) {
       console.error('Error generating thumbnail:', error);
+      // Return empty string if thumbnail generation fails - video will still work
       return '';
     }
   }

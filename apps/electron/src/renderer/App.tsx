@@ -9,87 +9,11 @@ import AIChat from './components/AIChat';
 import Timeline from './components/Timeline';
 import './App.css';
 
-function App() {
-  const { currentProject, projects, setCurrentProject } = useProjectStore();
-  const { messages } = useAIChatStore();
+const App: React.FC = () => {
   const navigate = useNavigate();
 
-  // Create sample projects if none exist
-  React.useEffect(() => {
-    if (projects.length === 0) {
-      const sampleProjects = [
-        {
-          id: 'sample-1',
-          name: 'Sample Project 1',
-          tracks: [
-            {
-              id: 'video-track-1',
-              name: 'Video Track 1',
-              type: 'video' as const,
-              clips: [],
-              enabled: true
-            },
-            {
-              id: 'audio-track-1',
-              name: 'Audio Track 1',
-              type: 'audio' as const,
-              clips: [],
-              enabled: true
-            }
-          ],
-          duration: 60,
-          resolution: { width: 1920, height: 1080 },
-          fps: 30
-        },
-        {
-          id: 'sample-2',
-          name: 'Sample Project 2',
-          tracks: [
-            {
-              id: 'video-track-2',
-              name: 'Video Track 1',
-              type: 'video' as const,
-              clips: [],
-              enabled: true
-            }
-          ],
-          duration: 30,
-          resolution: { width: 1280, height: 720 },
-          fps: 24
-        }
-      ];
-
-      useProjectStore.setState(state => ({
-        projects: sampleProjects,
-        currentProject: sampleProjects[0]
-      }));
-    }
-  }, [projects.length]);
-
-  // Create a simple test project if none exists
-  const testProject = {
-    id: 'test-project',
-    name: 'Test Project',
-    tracks: [
-      {
-        id: 'video-track-1',
-        name: 'Video Track 1',
-        type: 'video' as const,
-        clips: [],
-        enabled: true
-      },
-      {
-        id: 'audio-track-1',
-        name: 'Audio Track 1',
-        type: 'audio' as const,
-        clips: [],
-        enabled: true
-      }
-    ],
-    duration: 60,
-    resolution: { width: 1920, height: 1080 },
-    fps: 30
-  };
+  // No need to create sample projects - let the system create real ones when needed
+  // This prevents backend errors from trying to load non-existent projects
 
   return (
     <div className="App min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">

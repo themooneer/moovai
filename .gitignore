@@ -98,3 +98,7 @@ dist/
 
 # TypeScript
 *.tsbuildinfo
+
+# Backend data directories (contain large binary files)
+apps/backend/uploads/
+apps/backend/projects/

@@ -29,17 +29,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   error: null,
 
   createProject: async (name: string, resolution = { width: 1920, height: 1080 }, fps = 30) => {
+    console.log('🔄 ProjectStore: Starting project creation...', { name, resolution, fps });
     set({ isLoading: true, error: null });
     try {
       const response = await api.post('/api/project', { name, resolution, fps });
       const newProject = response.data.project;
+      console.log('✅ ProjectStore: Backend response received:', newProject);
 
-      set(state => ({
-        projects: [...state.projects, newProject],
-        currentProject: newProject,
-        isLoading: false
-      }));
+      set(state => {
+        console.log('🔄 ProjectStore: Updating state with new project...');
+        const updatedState = {
+          projects: [...state.projects, newProject],
+          currentProject: newProject,
+          isLoading: false
+        };
+        console.log('✅ ProjectStore: State updated:', updatedState);
+        return updatedState;
+      });
     } catch (error) {
+      console.error('❌ ProjectStore: Project creation failed:', error);
       set({
         error: error instanceof Error ? error.message : 'Failed to create project',
         isLoading: false
@@ -103,7 +111,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!currentProject) return;
 
     const updatedProject = { ...currentProject };
-    
+
     // If trackId is 'default', create a new video track
     if (trackId === 'default') {
       const newTrack: TimelineTrack = {

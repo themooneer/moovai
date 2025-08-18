@@ -39,7 +39,7 @@ export interface ChatMessage {
 
 export interface FFmpegOperation {
   id: string;
-  type: 'trim' | 'cut' | 'resize' | 'overlay' | 'audio';
+  type: 'trim' | 'cut' | 'resize' | 'overlay' | 'audio' | 'thumbnail';
   parameters: Record<string, any>;
   inputFile: string;
   outputFile: string;

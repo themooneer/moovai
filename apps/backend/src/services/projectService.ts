@@ -6,16 +6,24 @@ import { generateId, createEmptyProject } from '@ai-video-editor/shared';
 export class ProjectService {
   private projects: Map<string, VideoProject> = new Map();
   private projectsDir = 'projects';
+  private initialized = false;
 
   constructor() {
-    this.ensureProjectsDirectory();
+    // Initialize the service asynchronously
+    this.initialize();
+  }
+
+  private async initialize(): Promise<void> {
+    await this.ensureProjectsDirectory();
+    this.initialized = true;
   }
 
   private async ensureProjectsDirectory(): Promise<void> {
     try {
+      await fs.access(this.projectsDir);
+    } catch {
       await fs.mkdir(this.projectsDir, { recursive: true });
-    } catch (error) {
-      console.error('Error creating projects directory:', error);
+      console.log('📁 Created projects directory');
     }
   }
 
@@ -24,12 +32,24 @@ export class ProjectService {
     resolution: { width: number; height: number } = { width: 1920, height: 1080 },
     fps: number = 30
   ): Promise<VideoProject> {
+    console.log('🔄 ProjectService: Starting project creation...', { name, resolution, fps });
+
+    // Ensure service is initialized
+    if (!this.initialized) {
+      console.log('🔄 ProjectService: Service not initialized, initializing...');
+      await this.initialize();
+    }
+
     const project = createEmptyProject(name);
     project.resolution = resolution;
     project.fps = fps;
 
+    console.log('✅ ProjectService: Project created in memory:', project.id);
     this.projects.set(project.id, project);
+
+    console.log('💾 ProjectService: Saving project to disk...');
     await this.saveProject(project);
+    console.log('✅ ProjectService: Project saved to disk successfully');
 
     return project;
   }
@@ -212,9 +232,13 @@ export class ProjectService {
   private async saveProject(project: VideoProject): Promise<void> {
     try {
       const projectPath = path.join(this.projectsDir, `${project.id}.json`);
+      console.log('💾 ProjectService: Writing project to:', projectPath);
+
       await fs.writeFile(projectPath, JSON.stringify(project, null, 2));
+
+      console.log('✅ ProjectService: Project file written successfully');
     } catch (error) {
-      console.error('Error saving project:', error);
+      console.error('❌ ProjectService: Error saving project:', error);
       throw new Error('Failed to save project');
     }
   }
