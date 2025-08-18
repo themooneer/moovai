@@ -1,6 +1,70 @@
+/* Video.js styles */
+@import 'video.js/dist/video-js.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom Video.js styling */
+.video-js {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.video-js .vjs-big-play-button {
+  background-color: rgba(59, 130, 246, 0.8);
+  border-color: rgba(59, 130, 246, 0.9);
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
+  line-height: 80px;
+  font-size: 40px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: all 0.3s ease;
+}
+
+.video-js .vjs-big-play-button:hover {
+  background-color: rgba(59, 130, 246, 1);
+  border-color: rgba(59, 130, 246, 1);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.video-js .vjs-control-bar {
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.4));
+  backdrop-filter: blur(10px);
+}
+
+.video-js .vjs-progress-control .vjs-progress-holder {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.video-js .vjs-progress-control .vjs-play-progress {
+  background: linear-gradient(to right, #3b82f6, #1d4ed8);
+  border-radius: 3px;
+}
+
+.video-js .vjs-progress-control .vjs-load-progress {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.video-js .vjs-time-control {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  color: #e5e7eb;
+}
+
+.video-js .vjs-volume-control {
+  margin-right: 20px;
+}
+
+.video-js .vjs-volume-level {
+  background: linear-gradient(to top, #3b82f6, #1d4ed8);
+  border-radius: 2px;
+}
 
 /* Essential custom styles that don't conflict with Tailwind */
 * {

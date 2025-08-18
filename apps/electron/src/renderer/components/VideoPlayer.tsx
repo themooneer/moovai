@@ -1,4 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import videojs from 'video.js';
+import type Player from 'video.js/dist/types/player';
 import { VideoProject } from '../types';
 
 // Utility function to construct full video URL
@@ -7,7 +9,7 @@ const getVideoUrl = (path: string): string => {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }
-
+  
   // Construct full URL from backend server
   return `http://localhost:3001/${path}`;
 };
@@ -19,44 +21,113 @@ interface VideoPlayerProps {
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate }) => {
+  const videoRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<Player | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [duration, setDuration] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current && onTimeUpdate) {
-      onTimeUpdate(videoRef.current.currentTime);
-    }
-  };
+  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
 
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+  // Initialize Video.js player
+  useEffect(() => {
+    if (!videoRef.current || !firstVideoClip) return;
+
+    // Clean up existing player
+    if (playerRef.current) {
+      playerRef.current.dispose();
+      playerRef.current = null;
     }
-  };
+
+    // Create new player
+    const player = videojs(videoRef.current, {
+      controls: false, // We'll create custom controls
+      fluid: true,
+      responsive: true,
+      preload: 'metadata',
+      sources: [{
+        src: getVideoUrl(firstVideoClip.path),
+        type: 'video/mp4' // Default type, could be dynamic based on file extension
+      }]
+    });
+
+    // Store player reference
+    playerRef.current = player;
+
+    // Set up event listeners
+    player.on('loadedmetadata', () => {
+      const playerDuration = player.duration();
+      if (playerDuration !== undefined && !isNaN(playerDuration)) {
+        setDuration(playerDuration);
+      }
+    });
+
+    player.on('timeupdate', () => {
+      const time = player.currentTime();
+      if (time !== undefined && !isNaN(time)) {
+        setCurrentVideoTime(time);
+        onTimeUpdate?.(time);
+      }
+    });
+
+    player.on('play', () => {
+      setIsPlaying(true);
+    });
+
+    player.on('pause', () => {
+      setIsPlaying(false);
+    });
+
+    player.on('ended', () => {
+      setIsPlaying(false);
+    });
+
+    // Set initial volume
+    player.volume(volume);
+
+    // Cleanup function
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+      }
+    };
+  }, [firstVideoClip, onTimeUpdate, volume]);
+
+  // Handle external time updates (from timeline)
+  useEffect(() => {
+    if (playerRef.current && currentTime !== undefined && Math.abs(currentTime - currentVideoTime) > 0.1) {
+      playerRef.current.currentTime(currentTime);
+      setCurrentVideoTime(currentTime);
+    }
+  }, [currentTime, currentVideoTime]);
+
+  // Handle volume changes
+  useEffect(() => {
+    if (playerRef.current) {
+      playerRef.current.volume(volume);
+    }
+  }, [volume]);
 
   const handlePlayPause = () => {
-    if (videoRef.current) {
+    if (playerRef.current) {
       if (isPlaying) {
-        videoRef.current.pause();
+        playerRef.current.pause();
       } else {
-        videoRef.current.play();
+        playerRef.current.play();
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume;
-    }
   };
 
   const handleSeek = (time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
+    if (playerRef.current) {
+      playerRef.current.currentTime(time);
+      setCurrentVideoTime(time);
       onTimeUpdate?.(time);
     }
   };
@@ -72,22 +143,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
-
   return (
     <div className="video-player bg-transparent rounded-2xl overflow-hidden">
       <div className="video-container relative">
         {firstVideoClip ? (
-          <video
-            ref={videoRef}
-            src={getVideoUrl(firstVideoClip.path)}
-            className="w-full h-auto max-h-[70vh] rounded-xl shadow-2xl"
-            onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={handleLoadedMetadata}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-          />
+          <div className="relative">
+            {/* Video.js player container */}
+            <div 
+              ref={videoRef}
+              className="video-js vjs-default-skin vjs-big-play-centered"
+              style={{
+                width: '100%',
+                height: 'auto',
+                maxHeight: '70vh',
+                borderRadius: '12px',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+              }}
+            />
+            
+            {/* Custom overlay for better UX */}
+            <div className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden">
+              <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-lg text-sm font-medium backdrop-blur-sm">
+                {firstVideoClip.name}
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="video-placeholder flex items-center justify-center h-96 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border-2 border-dashed border-gray-600/50 backdrop-blur-sm transition-all duration-300 hover:border-purple-500/50 hover:bg-gray-800/70">
             <div className="text-center">
@@ -130,7 +210,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
             {/* Time Display and Progress Bar */}
             <div className="flex-1 space-y-3">
               <div className="flex items-center justify-between text-sm text-gray-300">
-                <span className="font-mono">{formatTime(currentTime || 0)}</span>
+                <span className="font-mono">{formatTime(currentVideoTime)}</span>
                 <span className="text-gray-500">/</span>
                 <span className="font-mono">{formatTime(duration)}</span>
               </div>
@@ -139,15 +219,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
                   type="range"
                   min="0"
                   max={duration || 0}
-                  value={currentTime || 0}
+                  value={currentVideoTime}
                   onChange={(e) => handleSeek(parseFloat(e.target.value))}
                   className="w-full h-3 bg-gray-700/50 rounded-xl appearance-none cursor-pointer slider"
                   style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((currentTime || 0) / (duration || 1)) * 100}%, #4b5563 ${((currentTime || 0) / (duration || 1)) * 100}%, #4b5563 100%)`
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 100%)`
                   }}
                 />
                 <div className="absolute top-0 left-0 h-3 bg-blue-500 rounded-xl transition-all duration-100 ease-out"
-                     style={{ width: `${((currentTime || 0) / (duration || 1)) * 100}%` }}>
+                     style={{ width: `${((currentVideoTime) / (duration || 1)) * 100}%` }}>
                 </div>
               </div>
             </div>
