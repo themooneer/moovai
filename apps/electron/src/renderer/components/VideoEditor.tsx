@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useAIChatStore } from '../stores/aiChatStore';
+import { videoImportService, VideoImportResult } from '../services/videoImportService';
 import VideoPlayer from './VideoPlayer';
 import Timeline from './Timeline';
 import AIChat from './AIChat';
+import { VideoClip } from '../types';
 
 const VideoEditor: React.FC = () => {
-  const { currentProject, saveProject } = useProjectStore();
+  const { currentProject, saveProject, addClipToTrack, createProject } = useProjectStore();
   const { messages, sendMessage } = useAIChatStore();
   const [currentTime, setCurrentTime] = useState(0);
   const [isTopBarCollapsed, setIsTopBarCollapsed] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isAIChatExpanded, setIsAIChatExpanded] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<number>(0);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const cleanupDragAndDropRef = useRef<(() => void) | null>(null);
 
   const handleAIMessage = async (content: string) => {
     await sendMessage(content, currentProject);
@@ -31,6 +38,133 @@ const VideoEditor: React.FC = () => {
     setIsExporting(true);
     // TODO: Implement export functionality
     setTimeout(() => setIsExporting(false), 2000);
+  };
+
+  const handleVideoImport = async () => {
+    setIsImporting(true);
+    setImportError(null);
+    setImportProgress(0);
+
+    try {
+      const result = await videoImportService.processVideoFile(
+        await getVideoFileFromPicker(),
+        (progress) => setImportProgress(progress)
+      );
+
+      if (result.success && result.clip) {
+        await handleVideoImportSuccess(result.clip);
+      } else {
+        setImportError(result.error || 'Failed to import video');
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setIsImporting(false);
+      setImportProgress(0);
+    }
+  };
+
+  const getVideoFileFromPicker = (): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'video/*';
+      input.multiple = false;
+
+      input.onchange = (event) => {
+        const target = event.target as HTMLInputElement;
+        const file = target.files?.[0];
+
+        if (file) {
+          resolve(file);
+        } else {
+          reject(new Error('No file selected'));
+        }
+      };
+
+      input.click();
+    });
+  };
+
+  const handleVideoImportSuccess = async (clip: VideoClip) => {
+    try {
+      // Create project if none exists
+      if (!currentProject) {
+        await createProject('Untitled Project', { width: 1920, height: 1080 }, 30);
+      }
+
+      // Add video clip to the first video track
+      if (currentProject) {
+        const videoTrack = currentProject.tracks.find(track => track.type === 'video');
+        if (videoTrack) {
+          addClipToTrack(videoTrack.id, clip);
+        } else {
+          // Create video track if none exists
+          // This will be handled by the project store
+          addClipToTrack('default', clip);
+        }
+
+        // Save project with new clip
+        await saveProject(currentProject);
+      }
+
+      // Extract metadata for AI usage
+      const metadata = await videoImportService.extractVideoMetadata(clip);
+      console.log('Video metadata for AI:', metadata);
+
+    } catch (error) {
+      console.error('Error handling video import success:', error);
+      setImportError('Failed to add video to project');
+    }
+  };
+
+  // Setup drag and drop when component mounts
+  useEffect(() => {
+    if (videoContainerRef.current) {
+      cleanupDragAndDropRef.current = videoImportService.setupDragAndDrop(
+        videoContainerRef.current,
+        handleVideoDropWithProgress,
+        (event) => {
+          // Handle drag over
+          event.preventDefault();
+        },
+        (event) => {
+          // Handle drag leave
+          event.preventDefault();
+        }
+      );
+    }
+
+    return () => {
+      if (cleanupDragAndDropRef.current) {
+        cleanupDragAndDropRef.current();
+      }
+    };
+  }, []);
+
+  // Enhanced drag and drop with progress tracking
+  const handleVideoDropWithProgress = async (file: File) => {
+    setIsImporting(true);
+    setImportError(null);
+    setImportProgress(0);
+
+    try {
+      const result = await videoImportService.processVideoFile(
+        file,
+        (progress) => setImportProgress(progress)
+      );
+
+      if (result.success && result.clip) {
+        await handleVideoImportSuccess(result.clip);
+      } else {
+        setImportError(result.error || 'Failed to import dropped video');
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed');
+    } finally {
+      setIsImporting(false);
+      setImportProgress(0);
+    }
   };
 
   if (!currentProject) {
@@ -127,7 +261,7 @@ const VideoEditor: React.FC = () => {
           isAIChatExpanded ? 'pr-0' : 'pr-6'
         }`}>
           {/* Video Player with Glassmorphism Frame */}
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center" ref={videoContainerRef}>
             <div className="relative group">
               {/* Glassmorphism Frame */}
               <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 rounded-3xl border border-white/20 shadow-2xl"></div>
@@ -142,15 +276,46 @@ const VideoEditor: React.FC = () => {
                 />
               </div>
 
-              {/* Floating Add Button */}
-              <button className="hidden absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-200 flex items-center justify-center group">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <div className="absolute top-full mt-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                  Add Effects & Transitions
+              {/* Import Button - Only show when no video is loaded */}
+              {!currentProject.tracks.some(track => track.type === 'video' && track.clips.length > 0) && (
+                <button
+                  onClick={handleVideoImport}
+                  disabled={isImporting}
+                  className="absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-200 flex items-center justify-center group"
+                  title="Import Video"
+                >
+                  {isImporting ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  )}
+                  <div className="absolute top-full mt-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                    Import Video
+                  </div>
+                </button>
+              )}
+
+              {/* Error Display */}
+              {importError && (
+                <div className="absolute top-4 left-4 right-4 bg-red-500/20 border border-red-500/30 rounded-lg p-3 text-red-300 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span>{importError}</span>
+                    <button
+                      onClick={() => setImportError(null)}
+                      className="ml-auto text-red-400 hover:text-red-300"
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              </button>
+              )}
             </div>
           </div>
         </div>
@@ -184,7 +349,7 @@ const VideoEditor: React.FC = () => {
 
       {/* Bottom Right - AI Chat (when collapsed) */}
       {!isAIChatExpanded && (
-        <div className="absolute bottom-80 right-6 w-80 z-50">
+        <div className="absolute bottom-6 right-6 w-80 z-50">
           <AIChat
             messages={messages}
             onSendMessage={handleAIMessage}

@@ -103,6 +103,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!currentProject) return;
 
     const updatedProject = { ...currentProject };
+    
+    // If trackId is 'default', create a new video track
+    if (trackId === 'default') {
+      const newTrack: TimelineTrack = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: 'Video Track 1',
+        type: 'video',
+        clips: [],
+        enabled: true
+      };
+      updatedProject.tracks.push(newTrack);
+      trackId = newTrack.id;
+    }
+
     const track = updatedProject.tracks.find(t => t.id === trackId);
     if (track) {
       track.clips.push(clip);

@@ -144,7 +144,7 @@ export class FFmpegService {
       command
         .outputOptions(['-c:v libx264', '-c:a aac', '-preset fast'])
         .output(outputPath)
-        .on('progress', (progress) => {
+        .on('progress', (progress: any) => {
           // Update operation progress
           const op = this.operations.get(operation.id);
           if (op) {
@@ -155,7 +155,7 @@ export class FFmpegService {
         .on('end', () => {
           resolve();
         })
-        .on('error', (error) => {
+        .on('error', (error: any) => {
           reject(error);
         })
         .run();
@@ -171,13 +171,13 @@ export class FFmpegService {
 
   async getVideoInfo(filePath: string): Promise<{ duration: number; width: number; height: number; fps: number }> {
     return new Promise((resolve, reject) => {
-      ffmpeg.ffprobe(filePath, (error, metadata) => {
+      ffmpeg.ffprobe(filePath, (error: any, metadata: any) => {
         if (error) {
           reject(error);
           return;
         }
 
-        const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+        const videoStream = metadata.streams.find((s: any) => s.codec_type === 'video');
         if (!videoStream) {
           reject(new Error('No video stream found'));
           return;

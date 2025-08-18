@@ -78,7 +78,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
             onEnded={() => setIsPlaying(false)}
           />
         ) : (
-          <div className="video-placeholder flex items-center justify-center h-96 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border-2 border-dashed border-gray-600/50 backdrop-blur-sm">
+          <div className="video-placeholder flex items-center justify-center h-96 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border-2 border-dashed border-gray-600/50 backdrop-blur-sm transition-all duration-300 hover:border-purple-500/50 hover:bg-gray-800/70">
             <div className="text-center">
               <div className="w-20 h-20 mx-auto mb-6 text-gray-500/60">
                 <svg fill="currentColor" viewBox="0 0 20 20">
@@ -86,7 +86,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-300 mb-2">Import a Video</h3>
-              <p className="text-gray-500 text-sm">Drag and drop a video file or use the AI chat to import</p>
+              <p className="text-gray-500 text-sm mb-4">Drag and drop a video file or use the AI chat to import</p>
+              <div className="text-xs text-gray-600 space-y-1">
+                <p>Supported formats: MP4, AVI, MOV, MKV, WMV, FLV, WebM</p>
+                <p>Maximum size: 100MB</p>
+              </div>
             </div>
           </div>
         )}

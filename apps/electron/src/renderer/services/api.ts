@@ -44,12 +44,18 @@ api.interceptors.response.use(
 
 // Video API methods
 export const videoAPI = {
-  upload: (file: File) => {
+  upload: (file: File, onProgress?: (progress: number) => void) => {
     const formData = new FormData();
     formData.append('video', file);
     return api.post('/api/video/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
       },
     });
   },

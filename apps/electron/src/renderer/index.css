@@ -66,6 +66,11 @@ body {
   100% { background-position: 200% 0; }
 }
 
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(147, 51, 234, 0.5); }
+  50% { border-color: rgba(147, 51, 234, 0.8); }
+}
+
 .float-animation {
   animation: float 3s ease-in-out infinite;
 }
@@ -78,4 +83,24 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
+}
+
+/* Drag and Drop Styles */
+.drag-over {
+  border-color: rgba(147, 51, 234, 0.8) !important;
+  background: rgba(147, 51, 234, 0.1) !important;
+  transform: scale(1.02);
+  transition: all 0.2s ease-in-out;
+}
+
+.drag-over .video-placeholder {
+  border-color: rgba(147, 51, 234, 0.8) !important;
+  background: rgba(147, 51, 234, 0.1) !important;
+  animation: pulse-border 1s ease-in-out infinite;
+}
+
+.drag-over .video-placeholder svg {
+  color: rgba(147, 51, 234, 0.8) !important;
+  transform: scale(1.1);
+  transition: all 0.2s ease-in-out;
 }

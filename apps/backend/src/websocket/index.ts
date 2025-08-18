@@ -7,7 +7,14 @@ interface Client {
   projectId?: string;
 }
 
-export function setupWebSocket(wss: WebSocketServer): void {
+// Extend WebSocketServer interface
+interface ExtendedWebSocketServer extends WebSocketServer {
+  broadcast: (message: any) => void;
+  broadcastToProject: (projectId: string, message: any) => void;
+  sendToClient: (clientId: string, message: any) => void;
+}
+
+export function setupWebSocket(wss: ExtendedWebSocketServer): void {
   const clients = new Map<string, Client>();
 
   wss.on('connection', (ws: WebSocket) => {
@@ -66,7 +73,7 @@ export function setupWebSocket(wss: WebSocketServer): void {
     });
   };
 
-  // Broadcast to specific client
+  // Send message to specific client
   wss.sendToClient = (clientId: string, message: any) => {
     const client = clients.get(clientId);
     if (client && client.ws.readyState === WebSocket.OPEN) {
