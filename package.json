@@ -1,0 +1,29 @@
+{
+  "name": "ai-video-editor",
+  "version": "1.0.0",
+  "description": "AI-Powered Video Editor with LLM Chat",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "build": "pnpm run --recursive build",
+    "clean": "pnpm run --recursive clean",
+    "install:all": "pnpm install",
+    "electron:dev": "pnpm --filter electron dev",
+    "backend:dev": "pnpm --filter backend dev",
+    "shared:build": "pnpm --filter shared build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "prettier": "^3.0.0",
+    "eslint": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

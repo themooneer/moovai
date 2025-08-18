@@ -1,0 +1,67 @@
+{
+  "name": "@ai-video-editor/electron",
+  "version": "1.0.0",
+  "description": "Electron frontend for AI Video Editor",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "pnpm run build:main && concurrently \"pnpm run dev:renderer\" \"pnpm run electron:dev\"",
+    "dev:renderer": "cross-env NODE_ENV=development vite --port 3000 --host",
+    "build": "pnpm run build:renderer && pnpm run build:main",
+    "build:watch": "pnpm run build:main:watch",
+    "build:renderer": "vite build",
+    "build:renderer:watch": "vite build --watch",
+    "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
+    "build:main:watch": "tsc -p tsconfig.main.json --watch & tsc -p tsconfig.preload.json --watch",
+    "electron:dev": "cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://localhost:3000 wait-on http://localhost:3000 && node start-electron.js",
+    "electron:build": "electron-builder",
+    "clean": "rm -rf dist out"
+  },
+  "dependencies": {
+    "@ai-video-editor/shared": "workspace:*",
+    "axios": "^1.6.0",
+    "electron": "^37.3.0",
+    "lucide-react": "^0.294.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-dropzone": "^14.2.0",
+    "react-player": "^2.13.0",
+    "react-router-dom": "^6.8.0",
+    "zustand": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "autoprefixer": "^10.4.0",
+    "concurrently": "^8.0.0",
+    "cross-env": "^7.0.3",
+    "dotenv": "^17.2.1",
+    "electron-builder": "^24.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0",
+    "wait-on": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.aivideoeditor.app",
+    "productName": "AI Video Editor",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.video"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
