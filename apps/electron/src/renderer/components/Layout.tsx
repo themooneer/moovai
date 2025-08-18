@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Minimize, Maximize, X, ArrowLeft, Save, Download } from 'lucide-react';
 import { useProjectStore } from '../stores/projectStore';
+import { useAIChatStore } from '../stores/aiChatStore';
+import AIChat from './AIChat';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,6 +13,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { currentProject, saveProject } = useProjectStore();
+  const { messages, sendMessage } = useAIChatStore();
 
   const handleSave = async () => {
     if (currentProject) {
@@ -27,6 +30,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const handleBack = () => {
     navigate('/');
+  };
+
+  const handleAIMessage = async (content: string) => {
+    if (!content.trim()) return;
+    await sendMessage(content, currentProject);
   };
 
   return (
@@ -71,7 +79,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <button
             onClick={handleExport}
-            className="btn-export px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-300 font-medium rounded-xl border border-green-500/30 hover:border-green-500/50 transition-all duration-200 hover:scale-105 flex items-center space-x-2"
+            className="btn-export px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-300 hover:text-green-200 rounded-xl border border-green-500/30 hover:border-green-500/50 transition-all duration-200 hover:scale-105 flex items-center space-x-2"
             title="Export Project"
           >
             <Download size={16} />
@@ -104,8 +112,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="layout-content flex-1 overflow-hidden">
+      {/* Main Content - Video Editor */}
+      <div className="layout-content flex-1 overflow-hidden relative">
         {children}
       </div>
     </div>

@@ -11,6 +11,7 @@ const VideoEditor: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(0);
   const [isTopBarCollapsed, setIsTopBarCollapsed] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isAIChatExpanded, setIsAIChatExpanded] = useState(true);
 
   const handleAIMessage = async (content: string) => {
     await sendMessage(content, currentProject);
@@ -53,7 +54,7 @@ const VideoEditor: React.FC = () => {
   return (
     <div className="h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col">
       {/* Top Bar - Collapsible */}
-      <div className={`bg-black/20 border-b border-white/10 transition-all duration-300 ease-out ${
+      <div className={`hidden bg-black/20 border-b border-white/10 transition-all duration-300 ease-out ${
         isTopBarCollapsed ? 'h-16' : 'h-24'
       }`}>
         <div className="flex items-center justify-between px-6 h-full">
@@ -122,7 +123,9 @@ const VideoEditor: React.FC = () => {
       {/* Main Editor Area */}
       <div className="flex-1 flex">
         {/* Left Side - Video Preview & Controls */}
-        <div className="flex-1 flex flex-col p-6">
+        <div className={`flex-1 flex flex-col p-6 transition-all duration-300 ease-out ${
+          isAIChatExpanded ? 'pr-0' : 'pr-6'
+        }`}>
           {/* Video Player with Glassmorphism Frame */}
           <div className="flex-1 flex items-center justify-center">
             <div className="relative group">
@@ -140,7 +143,7 @@ const VideoEditor: React.FC = () => {
               </div>
 
               {/* Floating Add Button */}
-              <button className="absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-200 flex items-center justify-center group">
+              <button className="hidden absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-200 flex items-center justify-center group">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
@@ -150,41 +153,46 @@ const VideoEditor: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {/* Quick Commands */}
-          <div className="mt-8">
-            <h3 className="text-lg font-semibold text-white mb-4">Quick Commands</h3>
-            <div className="grid grid-cols-4 gap-4">
-              {[
-                { icon: '✂️', label: 'Trim', command: 'Trim the video to 30 seconds' },
-                { icon: '🎨', label: 'Filters', command: 'Apply cinematic color grading' },
-                { icon: '🔊', label: 'Audio', command: 'Add background music' },
-                { icon: '📐', label: 'Resize', command: 'Resize to 1080p' }
-              ].map((cmd, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleAIMessage(cmd.command)}
-                  className="group p-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 hover:border-white/20 transition-all duration-200 hover:scale-105 hover:shadow-lg"
-                >
-                  <div className="text-2xl mb-2">{cmd.icon}</div>
-                  <div className="text-white font-medium text-sm">{cmd.label}</div>
-                  <div className="text-gray-400 text-xs mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    {cmd.command}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
-        {/* Right Side - AI Command Panel */}
-        <div className="w-96 border-l border-white/10 bg-black/20">
-          <AIChat
-            messages={messages}
-            onSendMessage={handleAIMessage}
+        {/* Right Side - AI Chat (when expanded) */}
+        {isAIChatExpanded && (
+          <div className="w-96 border-l border-white/10 bg-black/20">
+            <AIChat
+              messages={messages}
+              onSendMessage={handleAIMessage}
+              expanded={isAIChatExpanded}
+              onToggle={setIsAIChatExpanded}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Timeline at Bottom - Positioned to avoid AI Chat conflicts */}
+      <div className={`relative bg-black/30 border-t border-white/10 transition-all duration-300 ease-out ${
+        isAIChatExpanded ? 'ml-0' : 'ml-0'
+      }`}>
+        <div className="px-6 py-4">
+          <Timeline
+            project={currentProject}
+            currentTime={currentTime}
+            onTimeUpdate={handleTimeUpdate}
+            compact={false}
           />
         </div>
       </div>
+
+      {/* Bottom Right - AI Chat (when collapsed) */}
+      {!isAIChatExpanded && (
+        <div className="absolute bottom-80 right-6 w-80 z-50">
+          <AIChat
+            messages={messages}
+            onSendMessage={handleAIMessage}
+            expanded={isAIChatExpanded}
+            onToggle={setIsAIChatExpanded}
+          />
+        </div>
+      )}
     </div>
   );
 };
