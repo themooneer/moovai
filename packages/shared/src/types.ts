@@ -6,6 +6,8 @@ export interface VideoClip {
   endTime: number;
   duration: number;
   thumbnail?: string;
+  timestampKey?: string; // Unique timestamp key for tracking video versions
+  buffer?: string; // Base64 encoded video buffer
 }
 
 export interface TimelineTrack {
@@ -51,6 +53,7 @@ export interface AICommand {
   command: string;
   operation: FFmpegOperation;
   confidence: number;
+  ffmpegResult?: AIProcessingResult; // Result from AI processing
 }
 
 export interface VideoProcessingResult {
@@ -58,4 +61,10 @@ export interface VideoProcessingResult {
   outputPath: string;
   duration: number;
   error?: string;
+}
+
+export interface AIProcessingResult {
+  timestampKey: string;
+  buffer: string; // Base64 encoded processed video
+  path: string; // File path of processed video
 }

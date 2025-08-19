@@ -258,6 +258,15 @@ const VideoEditor: React.FC = () => {
     }
   }, [currentProject, pendingClip, addClipToTrack]);
 
+  // Memory cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      // Clean up video import service blob URLs
+      videoImportService.cleanupBlobUrls();
+      console.log('🧹 VideoEditor: Cleaned up all blob URLs on unmount');
+    };
+  }, []);
+
   if (!currentProject) {
     return (
       <div className="flex items-center justify-center h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -409,7 +418,6 @@ const VideoEditor: React.FC = () => {
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex-1 flex flex-col">
             <VideoPlayer
-              project={currentProject}
               currentTime={currentTime}
               onTimeUpdate={setCurrentTime}
               onVideoDurationUpdate={setVideoDuration}

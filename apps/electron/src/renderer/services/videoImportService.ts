@@ -9,6 +9,7 @@ export interface VideoImportResult {
 
 export class VideoImportService {
   private static instance: VideoImportService;
+  private blobUrls: Set<string> = new Set(); // Track blob URLs for cleanup
   private supportedFormats = [
     'video/mp4',
     'video/avi',
@@ -112,9 +113,32 @@ export class VideoImportService {
       const response = await videoAPI.upload(file, onProgress);
 
       if (response.data.success) {
+        const clip = response.data.clip;
+
+                  // Create a blob URL from the buffer if available
+          if (clip.buffer) {
+            try {
+              const videoBlob = new Blob([Uint8Array.from(atob(clip.buffer), c => c.charCodeAt(0))], { type: 'video/mp4' });
+              const blobUrl = URL.createObjectURL(videoBlob);
+
+              // Track the blob URL for cleanup
+              this.blobUrls.add(blobUrl);
+
+              // Update the clip with the blob URL for frontend use
+              clip.path = blobUrl;
+              console.log(`🎬 Video buffer converted to blob URL: ${blobUrl}`);
+            } catch (bufferError) {
+              console.warn('⚠️ Failed to convert buffer to blob URL, using original path:', bufferError);
+            }
+          } else if (clip.largeFile) {
+            // For large files, use the original path and log a warning
+            console.warn('⚠️ Large video file detected, using original path instead of buffer for memory optimization');
+            console.log(`🎬 Large video using path: ${clip.path}`);
+          }
+
         return {
           success: true,
-          clip: response.data.clip
+          clip
         };
       } else {
         return {
@@ -206,6 +230,36 @@ export class VideoImportService {
         thumbnail: clip.thumbnail,
         metadata: null
       };
+    }
+  }
+
+  /**
+   * Clean up blob URLs to free memory
+   */
+  cleanupBlobUrls(): void {
+    console.log(`🧹 Cleaning up ${this.blobUrls.size} blob URLs to free memory`);
+    this.blobUrls.forEach(url => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn('⚠️ Failed to cleanup blob URL:', error);
+      }
+    });
+    this.blobUrls.clear();
+  }
+
+  /**
+   * Clean up specific blob URL
+   */
+  cleanupBlobUrl(url: string): void {
+    if (this.blobUrls.has(url)) {
+      try {
+        URL.revokeObjectURL(url);
+        this.blobUrls.delete(url);
+        console.log('🧹 Cleaned up specific blob URL');
+      } catch (error) {
+        console.warn('⚠️ Failed to cleanup specific blob URL:', error);
+      }
     }
   }
 }

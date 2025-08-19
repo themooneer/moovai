@@ -7,6 +7,11 @@ interface AIChatState {
   isLoading: boolean;
   error: string | null;
   processingVideo: boolean;
+  lastProcessedVideo?: {
+    url: string;
+    timestampKey: string;
+    operation: any;
+  };
 
   // Actions
   sendMessage: (content: string, projectContext?: any) => Promise<void>;
@@ -14,6 +19,7 @@ interface AIChatState {
   updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
   clearMessages: () => void;
   setProcessingVideo: (processing: boolean) => void;
+  cleanupProcessedVideo: () => void; // Clean up blob URLs to free memory
 }
 
 export const useAIChatStore = create<AIChatState>((set, get) => ({
@@ -51,6 +57,53 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
       // If AI processed a video and we have a result
       if (aiResponse.ffmpegResult && aiResponse.operation) {
         console.log('🎬 AI processed video result received:', aiResponse);
+
+                // Handle the new processed video buffer
+        if (aiResponse.ffmpegResult.timestampKey) {
+          if (aiResponse.ffmpegResult.buffer) {
+            try {
+              // Clean up previous processed video to free memory
+              const currentState = get();
+              if (currentState.lastProcessedVideo?.url) {
+                try {
+                  URL.revokeObjectURL(currentState.lastProcessedVideo.url);
+                  console.log('🧹 Cleaned up previous processed video blob URL');
+                } catch (cleanupError) {
+                  console.warn('⚠️ Failed to cleanup previous blob URL:', cleanupError);
+                }
+              }
+
+              // Convert buffer to blob URL for the video player
+              const videoBlob = new Blob([Uint8Array.from(atob(aiResponse.ffmpegResult.buffer), c => c.charCodeAt(0))], { type: 'video/mp4' });
+              const newVideoUrl = URL.createObjectURL(videoBlob);
+
+              console.log(`🎬 New processed video created with timestamp key: ${aiResponse.ffmpegResult.timestampKey}`);
+              console.log(`🎬 New video blob URL: ${newVideoUrl}`);
+
+              // Store the new video URL in the store for the video player to use
+              set(state => ({
+                lastProcessedVideo: {
+                  url: newVideoUrl,
+                  timestampKey: aiResponse.ffmpegResult.timestampKey,
+                  operation: aiResponse.operation
+                }
+              }));
+            } catch (bufferError) {
+              console.error('❌ Failed to process video buffer:', bufferError);
+            }
+          } else if (aiResponse.ffmpegResult.largeFile) {
+            // For large files, store the path instead of buffer
+            console.log(`🎬 Large processed video detected, using path: ${aiResponse.ffmpegResult.path}`);
+            set(state => ({
+              lastProcessedVideo: {
+                url: aiResponse.ffmpegResult.path,
+                timestampKey: aiResponse.ffmpegResult.timestampKey,
+                operation: aiResponse.operation,
+                isLargeFile: true
+              }
+            }));
+          }
+        }
 
         // Add AI response message
         const aiMessage: ChatMessage = {
@@ -136,5 +189,24 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
 
   setProcessingVideo: (processing: boolean) => {
     set({ processingVideo: processing });
+  },
+
+  cleanupProcessedVideo: () => {
+    set(state => {
+      // Clean up the previous blob URL to free memory
+      if (state.lastProcessedVideo?.url) {
+        try {
+          URL.revokeObjectURL(state.lastProcessedVideo.url);
+          console.log('🧹 Cleaned up processed video blob URL to free memory');
+        } catch (error) {
+          console.warn('⚠️ Failed to cleanup blob URL:', error);
+        }
+      }
+
+      return {
+        ...state,
+        lastProcessedVideo: undefined
+      };
+    });
   }
 }));

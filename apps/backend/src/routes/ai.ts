@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { promises as fs } from 'fs';
 import { AIService } from '../services/aiService';
 import { FFmpegService } from '../services/ffmpegService';
 import { ChatMessage, AICommand } from '@ai-video-editor/shared';
@@ -26,29 +27,61 @@ router.post('/chat', async (req, res) => {
           // Set the input file for the operation
           aiResponse.operation.inputFile = inputFile;
 
-          // Execute the FFmpeg operation with file renaming strategy
+          // Execute the FFmpeg operation with timestamp-based processing
           console.log(`🎬 AI Chat: Executing operation on video: ${inputFile}`);
+
+          // Generate a new timestamp key for this AI processing
+          const processingTimestampKey = Date.now().toString();
 
           // Use processVideo instead of executeOperation to get file renaming
           const inputPath = inputFile;
           const outputPath = ffmpegService.generateOutputPath(inputFile, aiResponse.operation.type);
 
-          console.log(`🎬 AI Chat: Processing video with renaming strategy`);
+          console.log(`🎬 AI Chat: Processing video with timestamp key: ${processingTimestampKey}`);
           console.log(`🎬 AI Chat: Input path: ${inputPath}`);
           console.log(`🎬 AI Chat: Output path: ${outputPath}`);
 
           const result = await ffmpegService.processVideo(inputPath, outputPath, [aiResponse.operation]);
 
-          if (result.success) {
-            // With our new file renaming strategy, the processed video is now available
-            // at the original input path, so we return that path
-            console.log(`✅ AI Chat: FFmpeg operation completed, processed video available at: ${result.outputPath}`);
+                    if (result.success) {
+            // Check file size before reading as buffer
+            const stats = await fs.stat(result.outputPath);
+            const maxBufferSize = 50 * 1024 * 1024; // 50MB limit
+
+            if (stats.size > maxBufferSize) {
+              console.warn(`⚠️ Large processed video detected (${(stats.size / 1024 / 1024).toFixed(2)}MB), skipping buffer conversion`);
+
+              res.json({
+                success: true,
+                aiResponse: {
+                  ...aiResponse,
+                  ffmpegResult: {
+                    timestampKey: processingTimestampKey,
+                    buffer: null, // No buffer for large files
+                    path: result.outputPath,
+                    largeFile: true
+                  },
+                  operation: aiResponse.operation
+                },
+                message: 'Command processed successfully (large file - no buffer for memory optimization)'
+              });
+              return;
+            }
+
+            // Read the processed video as a buffer for smaller files
+            const processedVideoBuffer = await fs.readFile(result.outputPath);
+
+            console.log(`✅ AI Chat: FFmpeg operation completed, processed video available with timestamp key: ${processingTimestampKey}`);
 
             res.json({
               success: true,
               aiResponse: {
                 ...aiResponse,
-                ffmpegResult: result.outputPath, // This is now the original path with processed video
+                ffmpegResult: {
+                  timestampKey: processingTimestampKey,
+                  buffer: processedVideoBuffer.toString('base64'),
+                  path: result.outputPath
+                },
                 operation: aiResponse.operation
               },
               message: 'Command processed and executed successfully'

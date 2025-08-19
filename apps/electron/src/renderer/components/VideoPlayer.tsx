@@ -21,7 +21,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Project and AI chat state
   const project = useProjectStore(state => state.currentProject);
-  const { processingVideo } = useAIChatStore();
+  const { processingVideo, lastProcessedVideo } = useAIChatStore();
 
   // Video state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -179,6 +179,45 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [currentTime, currentVideoTime, onTimeUpdate]);
 
+    // Handle new processed video from AI
+  useEffect(() => {
+    if (lastProcessedVideo && lastProcessedVideo.url && videoClip) {
+      console.log('🎬 VideoPlayer: New processed video detected, updating player');
+
+      // Update the video source with the new processed video
+      if (playerRef.current && playerRef.current.src) {
+        try {
+          playerRef.current.src({
+            src: lastProcessedVideo.url,
+            type: 'video/mp4'
+          });
+
+          // Reload the player to show the new video
+          playerRef.current.load();
+
+          console.log(`🎬 VideoPlayer: Updated to new processed video with timestamp key: ${lastProcessedVideo.timestampKey}`);
+        } catch (error) {
+          console.error('🎬 VideoPlayer: Failed to update video source:', error);
+        }
+      }
+    }
+  }, [lastProcessedVideo, videoClip]);
+
+  // Cleanup function for component unmount
+  useEffect(() => {
+    return () => {
+      // Clean up any blob URLs when component unmounts
+      if (lastProcessedVideo?.url) {
+        try {
+          URL.revokeObjectURL(lastProcessedVideo.url);
+          console.log('🧹 VideoPlayer: Cleaned up blob URL on unmount');
+        } catch (error) {
+          console.warn('⚠️ VideoPlayer: Failed to cleanup blob URL on unmount:', error);
+        }
+      }
+    };
+  }, [lastProcessedVideo]);
+
   return (
     <div className="video-player bg-transparent rounded-2xl overflow-hidden">
       <div className="video-container relative">
@@ -239,6 +278,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </div>
             )}
 
+            {/* New Processed Video Notification */}
+            {lastProcessedVideo && lastProcessedVideo.timestampKey && (
+              <div className="absolute top-20 left-4 bg-green-600/90 text-white px-4 py-2 rounded-lg text-sm font-medium backdrop-blur-sm animate-pulse">
+                <div className="flex items-center space-x-2">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  <span>New AI Processed Video Available!</span>
+                </div>
+                <div className="text-xs opacity-80 mt-1">
+                  Timestamp: {lastProcessedVideo.timestampKey}
+                </div>
+              </div>
+            )}
+
             {/* Error indicator */}
             {error && (
               <div className="absolute inset-0 bg-red-900/30 flex items-center justify-center backdrop-blur-sm rounded-xl">
@@ -280,6 +334,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <div>Loading: {isLoadingVideo ? 'Yes' : 'No'}</div>
                 <div>Processing: {processingVideo ? 'Yes' : 'No'}</div>
                 <div>Current Path: {videoClip?.path || 'None'}</div>
+                <div>Timestamp Key: {videoClip?.timestampKey || 'None'}</div>
+                <div>Last Processed: {lastProcessedVideo?.timestampKey || 'None'}</div>
                 <div className="mt-2 text-xs opacity-70">
                   Using Video.js with native controls
                 </div>

@@ -248,6 +248,7 @@ export class FFmpegService {
     const dir = path.dirname(inputPath);
     const name = path.basename(inputPath, path.extname(inputPath));
     const timestamp = Date.now();
+    // Format: name_operationType_timestamp.mp4
     return path.join(dir, `${name}_${operationType}_${timestamp}.mp4`);
   }
 

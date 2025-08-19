@@ -36,6 +36,8 @@ export interface VideoClip {
   endTime: number;
   duration: number;
   thumbnail?: string;
+  timestampKey?: string; // Unique timestamp key for tracking video versions
+  buffer?: string; // Base64 encoded video buffer
 }
 
 export interface TimelineTrack {

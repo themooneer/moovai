@@ -19,16 +19,18 @@ const ensureUploadsDir = async () => {
   }
 };
 
-// Configure multer for video uploads
+// Configure multer for video uploads with timestamp-based naming
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     await ensureUploadsDir();
     cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const timestamp = Date.now();
+    const originalName = path.basename(file.originalname, path.extname(file.originalname));
     const extension = path.extname(file.originalname) || '.mp4';
-    cb(null, file.fieldname + '-' + uniqueSuffix + extension);
+    // Format: originalName_timestamp.extension
+    cb(null, `${originalName}_${timestamp}${extension}`);
   }
 });
 
@@ -39,7 +41,7 @@ const upload = multer({
       'video/mp4', 'video/avi', 'video/mov', 'video/mkv', 'video/wmv',
       'video/flv', 'video/webm', 'video/m4v', 'video/3gp', 'video/ogv'
     ];
-    
+
     if (supportedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -55,9 +57,9 @@ const upload = multer({
 router.post('/upload', upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: 'No video file provided' 
+        error: 'No video file provided'
       });
     }
 
@@ -66,16 +68,50 @@ router.post('/upload', upload.single('video'), async (req, res) => {
     const videoInfo = await videoService.getVideoInfo(req.file.path);
     const clip = await videoService.createVideoClip(req.file.path, videoInfo);
 
-    console.log(`✅ Video uploaded successfully: ${clip.name} (${clip.duration}s)`);
+          // Read the video file as a buffer with size check
+      const stats = await fs.stat(req.file.path);
+      const maxBufferSize = 50 * 1024 * 1024; // 50MB limit for buffer conversion
+
+      if (stats.size > maxBufferSize) {
+        console.warn(`⚠️ Large video file detected (${(stats.size / 1024 / 1024).toFixed(2)}MB), skipping buffer conversion`);
+        // For large files, return without buffer to prevent memory issues
+        const clip = await videoService.createVideoClip(req.file.path, videoInfo);
+
+        console.log(`✅ Large video uploaded successfully: ${clip.name} (${clip.duration}s) with timestamp key: ${Date.now().toString()}`);
+
+        res.json({
+          success: true,
+          clip: {
+            ...clip,
+            timestampKey: Date.now().toString(),
+            buffer: null, // No buffer for large files
+            largeFile: true
+          },
+          message: 'Large video uploaded successfully (no buffer for memory optimization)'
+        });
+        return;
+      }
+
+      // Read the video file as a buffer for smaller files
+      const videoBuffer = await fs.readFile(req.file.path);
+
+      // Generate a unique timestamp key for this video
+      const timestampKey = Date.now().toString();
+
+    console.log(`✅ Video uploaded successfully: ${clip.name} (${clip.duration}s) with timestamp key: ${timestampKey}`);
 
     res.json({
       success: true,
-      clip,
+      clip: {
+        ...clip,
+        timestampKey, // Add timestamp key to the clip
+        buffer: videoBuffer.toString('base64') // Return video as base64 buffer
+      },
       message: 'Video uploaded successfully'
     });
   } catch (error) {
     console.error('❌ Video upload error:', error);
-    
+
     // Clean up uploaded file if processing failed
     if (req.file) {
       try {
@@ -85,9 +121,9 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       }
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to upload video' 
+      error: error instanceof Error ? error.message : 'Failed to upload video'
     });
   }
 });
@@ -106,7 +142,7 @@ router.use((error: any, req: any, res: any, next: any) => {
       error: `Upload error: ${error.message}`
     });
   }
-  
+
   if (error.message && error.message.includes('Unsupported video format')) {
     return res.status(400).json({
       success: false,
