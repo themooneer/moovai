@@ -104,3 +104,52 @@ body {
   transform: scale(1.1);
   transition: all 0.2s ease-in-out;
 }
+
+/* Timeline Styles */
+.timeline {
+  transition: transform 0.15s ease-out;
+}
+
+.timeline-ruler {
+  transition: all 0.15s ease-out;
+}
+
+.timeline-tracks {
+  scroll-behavior: smooth;
+}
+
+.timeline-tracks::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timeline-tracks::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.timeline-tracks::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.timeline-tracks::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Video Player Controls */
+.video-controls {
+  transition: all 0.2s ease-out;
+}
+
+.slider {
+  transition: all 0.1s ease-out;
+}
+
+.slider:hover {
+  transform: scaleY(1.2);
+}
+
+/* Smooth transitions for all interactive elements */
+button, input, .video-player, .timeline {
+  transition: all 0.15s ease-out;
+}

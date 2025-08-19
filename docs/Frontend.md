@@ -1,138 +1,13 @@
-# AI Video Editor - Frontend Documentation
+# Frontend Documentation
 
 ## Overview
 
-The frontend of the AI Video Editor is built with React and TypeScript, providing a modern, responsive interface for video editing operations. The UI is designed to be intuitive for both beginners and advanced users, with the AI chat interface serving as the primary method of interaction.
+The frontend is built with React and TypeScript, providing a modern and responsive user interface for the AI Video Editor. It features a component-based architecture with state management using Zustand.
 
-## Architecture
+## Key Features
 
-### Component Hierarchy
-
-```
-App
-├── Layout
-│   ├── TitleBar
-│   └── LayoutContent
-├── ProjectList (Home)
-└── VideoEditor (Editor Route)
-    ├── VideoPlayer
-    ├── Timeline
-    │   ├── TimelineRuler
-    │   ├── TimelineTrack
-    │   └── TimelineClip
-    └── AIChat
-        ├── ChatMessage
-        └── CommandSuggestions
-```
-
-### State Management
-
-The application uses Zustand for state management, with separate stores for different concerns:
-
-- **ProjectStore**: Manages video projects, tracks, and clips
-- **AIChatStore**: Handles AI chat interactions and responses
-- **VideoStore**: Manages video playback and preview state
-
-## Core Components
-
-### 1. Layout Component
-
-The main layout wrapper that provides the application structure:
-
-```typescript
-interface LayoutProps {
-  children: React.ReactNode;
-}
-
-const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const navigate = useNavigate();
-  const { currentProject, saveProject } = useProjectStore();
-
-  const handleSave = async () => {
-    if (currentProject) {
-      await saveProject(currentProject);
-    }
-  };
-
-  return (
-    <div className="layout">
-      <TitleBar onSave={handleSave} onBack={() => navigate('/')} />
-      <div className="layout-content">
-        {children}
-      </div>
-    </div>
-  );
-};
-```
-
-**Features**:
-- **Title Bar**: Application title, project info, and window controls
-- **Navigation**: Back button to project list
-- **Actions**: Save and export project buttons
-- **Window Controls**: Minimize, maximize, close buttons
-
-### 2. ProjectList Component
-
-The home page that displays available projects and allows creation of new ones:
-
-```typescript
-const ProjectList: React.FC = () => {
-  const navigate = useNavigate();
-  const { projects, createProject, isLoading } = useProjectStore();
-  const [showCreateForm, setShowCreateForm] = useState(false);
-
-  const handleCreateProject = async (formData: ProjectFormData) => {
-    await createProject(formData.name, formData.resolution, formData.fps);
-    setShowCreateForm(false);
-  };
-
-  return (
-    <div className="project-list">
-      <Header />
-      <ProjectGrid projects={projects} onCreateNew={() => setShowCreateForm(true)} />
-      {showCreateForm && <CreateProjectForm onSubmit={handleCreateProject} />}
-    </div>
-  );
-};
-```
-
-**Features**:
-- **Project Grid**: Visual display of existing projects
-- **Create Form**: Modal for creating new projects
-- **Project Cards**: Clickable cards with project metadata
-- **Responsive Design**: Adapts to different screen sizes
-
-### 3. VideoEditor Component
-
-The main editing interface that combines video preview, timeline, and AI chat:
-
-```typescript
-const VideoEditor: React.FC = () => {
-  const { currentProject } = useProjectStore();
-  const { messages, sendMessage } = useAIChatStore();
-  const [currentTime, setCurrentTime] = useState(0);
-
-  const handleAIMessage = async (content: string) => {
-    await sendMessage(content, currentProject);
-  };
-
-  return (
-    <div className="editor-container">
-      <div className="editor-main">
-        <VideoPlayer project={currentProject} currentTime={currentTime} onTimeUpdate={setCurrentTime} />
-        <Timeline project={currentProject} currentTime={currentTime} onTimeUpdate={setCurrentTime} />
-      </div>
-      <div className="editor-sidebar">
-        <AIChat messages={messages} onSendMessage={handleAIMessage} />
-      </div>
-    </div>
-  );
-};
-```
-
-**Features**:
-- **Video Preview**: Real-time preview of edited video
-- **Timeline Interface**: Visual representation of video tracks
+- **Video Player**: Native HTML5 video player with custom controls
+- **Timeline Interface**: Video-focused timeline with perfect duration synchronization
 - **AI Chat**: Natural language command interface
 - **Responsive Layout**: Adapts to different screen sizes
 
@@ -140,22 +15,23 @@ const VideoEditor: React.FC = () => {
 
 ### 1. VideoPlayer Component
 
-Handles video playback and preview:
+Handles video playback and preview with native HTML5 video:
 
 ```typescript
 interface VideoPlayerProps {
   project: VideoProject | null;
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
+  onVideoDurationUpdate?: (duration: number) => void;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate, onVideoDurationUpdate }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [duration, setDuration] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
-  const firstVideoClip = project?.tracks.find(t => t.type === 'video')?.clips[0];
+  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
 
   return (
     <div className="video-player">
@@ -163,12 +39,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
         {firstVideoClip ? (
           <video
             ref={videoRef}
-            src={firstVideoClip.path}
-            onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
-            onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
+            src={getVideoUrl(firstVideoClip.path)}
+            preload="metadata"
+            onLoadedMetadata={(e) => {
+              const video = e.currentTarget;
+              if (video.duration) {
+                setDuration(video.duration);
+                onVideoDurationUpdate?.(video.duration);
+              }
+            }}
+            onTimeUpdate={handleTimeUpdate}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
-            controls={false}
+            onEnded={() => setIsPlaying(false)}
           />
         ) : (
           <div className="video-placeholder">
@@ -177,18 +60,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
         )}
       </div>
 
+      {/* Custom video controls */}
       {firstVideoClip && (
         <div className="video-controls">
-          <button onClick={() => {
-            if (!videoRef.current) return;
-            if (isPlaying) videoRef.current.pause(); else videoRef.current.play();
-          }}>
-            {isPlaying ? 'Pause' : 'Play'}
-          </button>
-          <input type="range" min={0} max={duration} value={currentTime || 0}
-                 onChange={(e) => onTimeUpdate?.(parseFloat(e.target.value))} />
-          <input type="range" min={0} max={1} step={0.1} value={volume}
-                 onChange={(e) => { setVolume(parseFloat(e.target.value)); if (videoRef.current) videoRef.current.volume = parseFloat(e.target.value); }} />
+          {/* Play/Pause, seek, volume controls */}
         </div>
       )}
     </div>
@@ -196,75 +71,115 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
 };
 ```
 
-**Features**:
-- **Video Playback**: HTML5 video element with controls
-- **Time Tracking**: Current playback position
-- **Volume Control**: Audio level adjustment
-- **Placeholder State**: UI for when no video is loaded
+**Key Features:**
+- Native HTML5 video element for maximum compatibility
+- Real-time duration updates passed to parent component
+- Custom video controls with play/pause, seek, and volume
+- Keyboard shortcuts for precise control
+- Visual feedback during seeking operations
+
+**Keyboard Shortcuts:**
+- `Space` - Play/Pause
+- `←` - Seek 5 seconds backward
+- `→` - Seek 5 seconds forward
+- `Home` - Jump to start
+- `End` - Jump to end
 
 ### 2. Timeline Component
 
-Visual representation of video tracks and clips:
+Video-focused timeline with perfect duration synchronization:
 
 ```typescript
 interface TimelineProps {
   project: VideoProject | null;
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
+  compact?: boolean;
+  videoDuration?: number;
+  onVideoDurationUpdate?: (duration: number) => void;
 }
 
-const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate }) => {
-  const { addClipToTrack, removeClipFromTrack, addTrack, removeTrack } = useProjectStore();
-  const [zoom, setZoom] = useState(1);
-  const [selectedClip, setSelectedClip] = useState<string | null>(null);
+const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate, compact = false, videoDuration, onVideoDurationUpdate }) => {
+  // Use actual video duration for perfect sync, fallback to project duration
+  const effectiveDuration = videoDuration || project?.duration || 0;
 
-  if (!project) return <div className="timeline" />;
+  // Auto-scroll timeline to keep current time visible
+  useEffect(() => {
+    if (timelineRef.current && tracksContainerRef.current && currentTime && effectiveDuration) {
+      const timelineWidth = timelineRef.current.offsetWidth;
+      const totalWidth = Math.max(800, effectiveDuration * 100 * zoom);
+      const currentTimePosition = (currentTime / effectiveDuration) * totalWidth;
+      const scrollPosition = currentTimePosition - (timelineWidth / 2);
 
-  const handleSeek = (time: number) => onTimeUpdate?.(time);
+      // Smooth scroll to keep current time centered
+      tracksContainerRef.current.scrollTo({
+        left: Math.max(0, scrollPosition),
+        behavior: 'smooth'
+      });
+    }
+  }, [currentTime, zoom, effectiveDuration]);
 
   return (
-    <div className="timeline">
-      <div className="timeline-header">
-        <button onClick={() => setZoom(Math.max(0.1, zoom - 0.2))}>-</button>
-        <span>{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(Math.min(5, zoom + 0.2))}>+</button>
-        <button onClick={() => addTrack('Video Track', 'video')}>+ Video</button>
-        <button onClick={() => addTrack('Audio Track', 'audio')}>+ Audio</button>
-        <button onClick={() => addTrack('Overlay Track', 'overlay')}>+ Overlay</button>
+    <div className="timeline bg-gray-800 rounded-lg overflow-hidden">
+      {/* Timeline Header with Zoom Controls */}
+      <div className="timeline-header bg-gray-700 px-4 py-2 border-b border-gray-600">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <h3 className="text-white font-medium">Video Timeline</h3>
+            <div className="flex items-center space-x-2">
+              {/* Zoom controls */}
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-gray-400 text-sm">
+              Duration: {formatTime(effectiveDuration)}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <TimelineRuler currentTime={currentTime || 0} duration={project.duration} zoom={zoom} onSeek={handleSeek} />
+      {/* Timeline Ruler */}
+      <TimelineRuler
+        currentTime={currentTime || 0}
+        duration={effectiveDuration}
+        zoom={zoom}
+        onSeek={handleTimelineSeek}
+      />
 
-      <div className="timeline-tracks">
-        {project.tracks.map(track => (
-          <TimelineTrackComponent
-            key={track.id}
-            track={track}
-            zoom={zoom}
-            onClipDrop={(trackId, clip) => addClipToTrack(trackId, clip)}
-            onClipRemove={(trackId, clipId) => removeClipFromTrack(trackId, clipId)}
-            onRemoveTrack={removeTrack}
-            selectedClip={selectedClip}
-            onClipSelect={setSelectedClip}
-          />
-        ))}
+      {/* Video Tracks Only */}
+      <div className="timeline-tracks overflow-x-auto" ref={tracksContainerRef}>
+        <div className="min-w-full" style={{ width: `${Math.max(800, effectiveDuration * 100 * zoom)}px` }}>
+          {project.tracks
+            .filter(track => track.type === 'video') // Only show video tracks
+            .map((track) => (
+              <TimelineTrackComponent
+                key={track.id}
+                track={track}
+                zoom={zoom}
+                onClipDrop={handleClipDrop}
+                onClipRemove={handleClipRemove}
+                onRemoveTrack={handleRemoveTrack}
+                selectedClip={selectedClip}
+                onClipSelect={setSelectedClip}
+              />
+            ))}
+        </div>
       </div>
     </div>
   );
 };
 ```
 
-**Features**:
-- **Track Display**: Visual representation of video and audio tracks
-- **Clip Management**: Drag and drop clips between tracks
-- **Time Ruler**: Visual time scale with current position indicator
-- **Zoom Control**: Adjust timeline zoom level
-- **Clip Operations**: Add, remove, and modify clips
+**Key Features:**
+- **Video-Only Tracks**: Only displays video tracks for a clean, focused interface
+- **Perfect Duration Sync**: Uses actual video duration from HTML5 video element
+- **Auto-Scrolling**: Automatically scrolls to keep current time visible
+- **Smart Scaling**: Timeline width automatically adjusts to video duration
+- **Zoom Integration**: Zoom controls work seamlessly with video duration scaling
 
-### 3. AIChat Component
-### 4. TimelineRuler Component
+### 3. TimelineRuler Component
 
-Lightweight time scale with markers and a clickable seek area.
+Advanced timeline ruler with adaptive scaling and precise navigation:
 
 ```typescript
 interface TimelineRulerProps {
@@ -272,413 +187,205 @@ interface TimelineRulerProps {
   duration: number;
   zoom: number;
   onSeek: (time: number) => void;
-}
-```
-
-**Features**:
-- Markers auto-calculated by zoom
-- Click to seek
-- Playhead line and indicator
-
-### 5. TimelineTrack Component
-
-Represents a single track (video/audio/overlay) and its clips.
-
-```typescript
-interface TimelineTrackProps {
-  track: TimelineTrack;
-  zoom: number;
-  onClipDrop: (trackId: string, clip: VideoClip) => void;
-  onClipRemove: (trackId: string, clipId: string) => void;
-  onRemoveTrack: (trackId: string) => void;
-  selectedClip: string | null;
-  onClipSelect: (clipId: string | null) => void;
-}
-```
-
-**Features**:
-- Drag & drop clips
-- Remove track
-- Renders `TimelineClip`
-
-### 6. TimelineClip Component
-
-A draggable, selectable clip block with keyboard accessibility.
-
-```typescript
-interface TimelineClipProps {
-  clip: VideoClip;
-  zoom: number;
-  isSelected: boolean;
-  onSelect: () => void;
-  onRemove: () => void;
-}
-```
-
-**Features**:
-- Position and width based on start/duration
-- Enter/Space select, Delete remove
-- Resize handles placeholder
-
-### 7. ChatMessage Component
-
-Renders a single chat message with status indicators and optional FFmpeg payload.
-
-```typescript
-interface ChatMessageProps {
-  message: ChatMessage;
-}
-```
-
-**Features**:
-- Status: pending, processing, completed, error
-- User/Assistant avatars and alignment
-- Copy FFmpeg operation
-
-### 8. CommandSuggestions Component
-
-Quick-pick commands organized by categories (basic, effects, audio, transform, advanced).
-
-```typescript
-interface CommandSuggestionsProps {
-  onCommandSelect: (command: string) => void;
-}
-```
-
-**Features**:
-- Category tabs with curated commands
-- 1-click inject into chat input
-- Tips and examples
-
-Interface for AI-powered video editing commands:
-
-```typescript
-interface AIChatProps {
-  messages: ChatMessage[];
-  onSendMessage: (content: string) => Promise<void>;
+  compact?: boolean;
 }
 
-const AIChat: React.FC<AIChatProps> = ({ messages, onSendMessage }) => {
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+const TimelineRuler: React.FC<TimelineRulerProps> = ({ currentTime, duration, zoom, onSeek, compact = false }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragTime, setDragTime] = useState<number | null>(null);
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
-    setIsLoading(true);
-    try {
-      await onSendMessage(inputValue);
-      setInputValue('');
-    } finally {
-      setIsLoading(false);
+  // Calculate time from mouse position
+  const getTimeFromPosition = (clientX: number): number => {
+    if (!rulerRef.current) return 0;
+    const rect = rulerRef.current.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    const rulerWidth = rect.width;
+    const clickTime = (clickX / rulerWidth) * duration;
+    return Math.max(0, Math.min(duration, clickTime));
+  };
+
+  // Adaptive time markers based on duration and zoom
+  const getTimeMarkers = () => {
+    const markers = [];
+
+    // Adaptive marker density based on duration and zoom
+    let step = 1; // Default 1 second
+
+    if (duration > 300) { // 5+ minutes
+      step = Math.max(5, Math.floor(30 / zoom));
+    } else if (duration > 60) { // 1+ minute
+      step = Math.max(1, Math.floor(10 / zoom));
+    } else { // Less than 1 minute
+      step = Math.max(0.5, Math.floor(5 / zoom));
     }
+
+    for (let i = 0; i <= duration; i += step) {
+      markers.push(i);
+    }
+
+    return markers;
   };
 
   return (
-    <div className="ai-chat">
-      <div className="messages">
-        {messages.map(msg => (
-          <ChatMessage key={msg.id} message={msg} />
+    <div className="timeline-ruler bg-gray-700 border-b border-gray-600 relative">
+      <div
+        ref={rulerRef}
+        className="ruler-click-area h-8 cursor-pointer relative select-none"
+        onClick={handleRulerClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+      >
+        {/* Time Markers */}
+        {timeMarkers.map((time) => (
+          <div
+            key={time}
+            className="absolute top-0 bottom-0 flex flex-col items-center"
+            style={{
+              left: `${(time / duration) * 100}%`,
+              transform: 'translateX(-50%)'
+            }}
+          >
+            <div className="w-px h-4 bg-gray-500"></div>
+            <span className="text-xs text-gray-400 mt-1 whitespace-nowrap">
+              {formatTime(time)}
+            </span>
+          </div>
         ))}
-        {isLoading && <div>AI is thinking…</div>}
-      </div>
-      <CommandSuggestions onCommandSelect={setInputValue} />
-      <div className="input">
-        <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} />
-        <button disabled={!inputValue.trim() || isLoading} onClick={handleSendMessage}>Send</button>
+
+        {/* Current Time Indicator */}
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 transition-all duration-75 ease-out"
+          style={{
+            left: `${(displayTime / duration) * 100}%`,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          <div className="w-3 h-3 bg-red-500 rounded-full -ml-1.5 -mt-1.5 shadow-lg"></div>
+        </div>
+
+        {/* Playhead Line */}
+        <div
+          className="absolute top-0 bottom-0 w-px bg-red-500 z-10 transition-all duration-75 ease-out"
+          style={{
+            left: `${(displayTime / duration) * 100}%`,
+            transform: 'translateX(-50%)'
+          }}
+        />
+
+        {/* Current Time Display */}
+        <div className="absolute top-1 left-2 px-2 py-1 bg-red-500 text-white text-xs rounded font-mono font-medium shadow-lg z-20">
+          {formatTime(displayTime)}
+        </div>
+
+        {/* Duration Display */}
+        <div className="absolute top-1 right-2 px-2 py-1 bg-gray-600 text-white text-xs rounded font-mono font-medium shadow-lg z-20">
+          {formatTime(duration)}
+        </div>
       </div>
     </div>
   );
 };
 ```
 
-**Features**:
-- **Message History**: Scrollable chat history
-- **Input Interface**: Text input with send button
-- **Loading States**: Visual feedback during AI processing
-- **Command Suggestions**: Quick access to common commands
-- **Auto-scroll**: Automatically scroll to latest messages
+**Key Features:**
+- **Adaptive Time Markers**: Automatically adjusts marker density based on video length
+- **Drag Navigation**: Click and drag for precise timeline navigation
+- **Visual Feedback**: Prominent current time and duration displays
+- **Smooth Transitions**: All interactions have smooth CSS transitions
+- **Precise Seeking**: Accurate time calculation from mouse position
 
-## State Management
+## Timeline Synchronization Architecture
 
-### 1. ProjectStore
+### 1. Duration Flow
 
-Manages video project state and operations:
-
-```typescript
-interface ProjectState {
-  projects: VideoProject[];
-  currentProject: VideoProject | null;
-  isLoading: boolean;
-  error: string | null;
-
-  // Actions
-  createProject: (name: string, resolution?: Resolution, fps?: number) => Promise<void>;
-  loadProject: (projectId: string) => Promise<void>;
-  saveProject: (project: VideoProject) => Promise<void>;
-  addClipToTrack: (trackId: string, clip: VideoClip) => void;
-  removeClipFromTrack: (trackId: string, clipId: string) => void;
-  updateClip: (trackId: string, clipId: string, updates: Partial<VideoClip>) => void;
-}
-
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  // State
-  projects: [],
-  currentProject: null,
-  isLoading: false,
-  error: null,
-
-  // Actions
-  createProject: async (name, resolution, fps) => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await api.post('/api/project', { name, resolution, fps });
-      const newProject = response.data.project;
-
-      set(state => ({
-        projects: [...state.projects, newProject],
-        currentProject: newProject,
-        isLoading: false
-      }));
-    } catch (error) {
-      set({
-        error: error instanceof Error ? error.message : 'Failed to create project',
-        isLoading: false
-      });
-    }
-  },
-
-  // ... other actions
-}));
+```
+VideoPlayer → VideoEditor → Timeline → TimelineRuler
+     ↓              ↓          ↓           ↓
+onVideoDurationUpdate → videoDuration → effectiveDuration → duration
 ```
 
-**Key Features**:
-- **CRUD Operations**: Create, read, update, delete projects
-- **Track Management**: Add, remove, and modify tracks
-- **Clip Operations**: Manage video and audio clips
-- **Error Handling**: Centralized error management
-- **Loading States**: Track operation progress
+### 2. Time Update Flow
 
-### 2. AIChatStore
-
-Manages AI chat interactions:
-
-```typescript
-interface AIChatState {
-  messages: ChatMessage[];
-  isLoading: boolean;
-  error: string | null;
-  aiStatus: 'idle' | 'processing' | 'ready' | 'error';
-
-  // Actions
-  sendMessage: (content: string, projectContext?: any) => Promise<void>;
-  addMessage: (message: ChatMessage) => void;
-  clearMessages: () => void;
-  getAIStatus: () => Promise<void>;
-}
-
-export const useAIChatStore = create<AIChatState>((set, get) => ({
-  // State
-  messages: [],
-  isLoading: false,
-  error: null,
-  aiStatus: 'idle',
-
-  // Actions
-  sendMessage: async (content, projectContext) => {
-    const userMessage: ChatMessage = {
-      id: generateId(),
-      type: 'user',
-      content,
-      timestamp: new Date(),
-      status: 'pending'
-    };
-
-    set(state => ({
-      messages: [...state.messages, userMessage],
-      isLoading: true,
-      error: null
-    }));
-
-    try {
-      const response = await api.post('/api/ai/chat', {
-        message: content,
-        projectContext
-      });
-
-      const aiResponse = response.data.aiResponse;
-
-      const aiMessage: ChatMessage = {
-        id: generateId(),
-        type: 'assistant',
-        content: `I'll help you with that! ${aiResponse.command ? 'Processing your request...' : 'How can I help you further?'}`,
-        timestamp: new Date(),
-        status: 'completed',
-        ffmpegCommand: aiResponse.operation ? JSON.stringify(aiResponse.operation) : undefined
-      };
-
-      set(state => ({
-        messages: [...state.messages, aiMessage],
-        isLoading: false
-      }));
-
-      // Update user message status
-      if (aiResponse.command) {
-        set(state => ({
-          messages: state.messages.map(msg =>
-            msg.id === userMessage.id
-              ? { ...msg, status: 'completed' as const }
-              : msg
-          )
-        }));
-      }
-    } catch (error) {
-      set(state => ({
-        messages: state.messages.map(msg =>
-          msg.id === userMessage.id
-            ? { ...msg, status: 'error' as const }
-            : msg
-        ),
-        error: error instanceof Error ? error.message : 'Failed to send message',
-        isLoading: false
-      }));
-    }
-  },
-
-  // ... other actions
-}));
+```
+VideoPlayer → VideoEditor → Timeline → TimelineRuler
+     ↓              ↓          ↓           ↓
+onTimeUpdate → currentTime → currentTime → currentTime
 ```
 
-**Key Features**:
-- **Message Management**: Store and display chat messages
-- **AI Integration**: Send messages to AI service
-- **Status Tracking**: Track message and operation status
-- **Error Handling**: Handle AI service failures gracefully
-- **Context Awareness**: Include project context in AI requests
-
-## Styling and Design
-
-### 1. Tailwind CSS Integration
-
-The application uses Tailwind CSS for styling:
+### 3. Auto-Scrolling Logic
 
 ```typescript
-// tailwind.config.js
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {
-      colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          // ... more shades
-        },
-        gray: {
-          50: '#f8fafc',
-          // ... more shades
-        }
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.3s ease-in-out',
-        'slide-up': 'slideUp 0.3s ease-out',
-      }
-    },
-  },
-  plugins: [],
-}
+// Calculate scroll position to center current time
+const timelineWidth = timelineRef.current.offsetWidth;
+const totalWidth = Math.max(800, effectiveDuration * 100 * zoom);
+const currentTimePosition = (currentTime / effectiveDuration) * totalWidth;
+const scrollPosition = currentTimePosition - (timelineWidth / 2);
+
+// Smooth scroll to keep current time centered
+tracksContainerRef.current.scrollTo({
+  left: Math.max(0, scrollPosition),
+  behavior: 'smooth'
+});
 ```
 
-### 2. Custom CSS Classes
+## CSS Styling
 
-Application-specific styles are defined in CSS files:
+### Timeline Styles
 
 ```css
-/* index.css */
-:root {
-  --primary-color: #3b82f6;
-  --secondary-color: #64748b;
-  --background-color: #0f172a;
-  --surface-color: #1e293b;
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
+/* Timeline Styles */
+.timeline {
+  transition: transform 0.15s ease-out;
 }
 
-/* App.css */
-.layout {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+.timeline-ruler {
+  transition: all 0.15s ease-out;
 }
 
-.title-bar {
-  height: 60px;
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-  border-bottom: 1px solid #475569;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  -webkit-app-region: drag;
+.timeline-tracks {
+  scroll-behavior: smooth;
+}
+
+.timeline-tracks::-webkit-scrollbar {
+  height: 8px;
+}
+
+.timeline-tracks::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.timeline-tracks::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.timeline-tracks::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 ```
 
-## Responsive Design
+### Video Player Controls
 
-### 1. Breakpoint Strategy
+```css
+/* Video Player Controls */
+.video-controls {
+  transition: all 0.2s ease-out;
+}
 
-The application uses Tailwind's responsive utilities:
+.slider {
+  transition: all 0.1s ease-out;
+}
 
-```typescript
-// Mobile-first approach
-<div className="
-  w-full                    // Mobile: full width
-  md:w-1/2                 // Medium screens: half width
-  lg:w-1/3                 // Large screens: one-third width
-  xl:w-1/4                 // Extra large: one-quarter width
-">
-  {/* Content */}
-</div>
-```
+.slider:hover {
+  transform: scaleY(1.2);
+}
 
-### 2. Layout Adaptations
-
-Different layouts for different screen sizes:
-
-```typescript
-const VideoEditor: React.FC = () => {
-  return (
-    <div className="
-      editor-container
-      flex-col                    // Mobile: vertical layout
-      lg:flex-row                // Large screens: horizontal layout
-    ">
-      <div className="
-        editor-main
-        w-full                    // Mobile: full width
-        lg:w-auto                // Large screens: auto width
-        lg:flex-1                // Large screens: take remaining space
-      ">
-        <VideoPlayer />
-        <Timeline />
-      </div>
-      <div className="
-        editor-sidebar
-        w-full                    // Mobile: full width
-        h-80                     // Mobile: fixed height
-        lg:w-96                  // Large screens: fixed width
-        lg:h-auto                // Large screens: full height
-        border-t                  // Mobile: top border
-        lg:border-l               // Large screens: left border
-        lg:border-t-0             // Large screens: no top border
-      ">
-        <AIChat />
-      </div>
-    </div>
-  );
-};
+/* Smooth transitions for all interactive elements */
+button, input, .video-player, .timeline {
+  transition: all 0.15s ease-out;
+}
 ```
 
 ## Performance Optimization
@@ -692,136 +399,22 @@ const TimelineClip = React.memo<TimelineClipProps>(({ clip, onSelect, onRemove }
   // Component implementation
 });
 
-const ChatMessage = React.memo<ChatMessageProps>(({ message }) => {
+const TimelineRuler = React.memo<TimelineRulerProps>(({ currentTime, duration, zoom, onSeek }) => {
   // Component implementation
 });
 ```
 
-### 2. Lazy Loading
+### 2. Efficient Re-renders
 
-Load components only when needed:
+- Timeline only re-renders when `currentTime`, `zoom`, or `effectiveDuration` changes
+- VideoPlayer only re-renders when video state changes
+- TimelineRuler uses memoization for expensive calculations
 
-```typescript
-const VideoEditor = lazy(() => import('./components/VideoEditor'));
-const ProjectList = lazy(() => import('./components/ProjectList'));
+### 3. Smooth Animations
 
-const App: React.FC = () => {
-  return (
-    <Suspense fallback={<LoadingSpinner />}>
-      <Routes>
-        <Route path="/" element={<ProjectList />} />
-        <Route path="/editor/:projectId" element={<VideoEditor />} />
-      </Routes>
-    </Suspense>
-  );
-};
-```
-
-### 3. Virtual Scrolling
-
-For large timelines, implement virtual scrolling:
-
-```typescript
-const VirtualTimeline: React.FC<VirtualTimelineProps> = ({ tracks, height, itemHeight }) => {
-  const [scrollTop, setScrollTop] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const visibleItems = useMemo(() => {
-    const startIndex = Math.floor(scrollTop / itemHeight);
-    const endIndex = Math.min(
-      startIndex + Math.ceil(height / itemHeight) + 1,
-      tracks.length
-    );
-
-    return tracks.slice(startIndex, endIndex).map((track, index) => ({
-      ...track,
-      index: startIndex + index
-    }));
-  }, [tracks, scrollTop, height, itemHeight]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="timeline-container"
-      style={{ height, overflow: 'auto' }}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-    >
-      <div style={{ height: tracks.length * itemHeight }}>
-        {visibleItems.map(track => (
-          <TimelineTrack
-            key={track.id}
-            track={track}
-            style={{
-              position: 'absolute',
-              top: track.index * itemHeight,
-              height: itemHeight
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-```
-
-## Accessibility
-
-### 1. Keyboard Navigation
-
-Support keyboard-only navigation:
-
-```typescript
-const TimelineClip: React.FC<TimelineClipProps> = ({ clip, onSelect, onRemove }) => {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onSelect(clip);
-    } else if (e.key === 'Delete') {
-      e.preventDefault();
-      onRemove(clip.id);
-    }
-  };
-
-  return (
-    <div
-      className="timeline-clip"
-      tabIndex={0}
-      role="button"
-      aria-label={`${clip.name} (${clip.duration}s)`}
-      onKeyDown={handleKeyDown}
-      onClick={() => onSelect(clip)}
-    >
-      {clip.name}
-    </div>
-  );
-};
-```
-
-### 2. Screen Reader Support
-
-Provide proper ARIA labels and descriptions:
-
-```typescript
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ project }) => {
-  return (
-    <div className="video-player" role="region" aria-label="Video Player">
-      <div className="video-container">
-        {project?.tracks[0]?.clips[0] ? (
-          <video
-            src={project.tracks[0].clips[0].path}
-            controls
-            aria-label={`Playing ${project.tracks[0].clips[0].name}`}
-          />
-        ) : (
-          <div className="video-placeholder" aria-live="polite">
-            <p>Import a video to get started</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-```
+- CSS transitions for smooth timeline interactions
+- RequestAnimationFrame for smooth scrolling
+- Debounced zoom and seek operations
 
 ## Testing Strategy
 
@@ -831,22 +424,22 @@ Test individual components in isolation:
 
 ```typescript
 import { render, screen, fireEvent } from '@testing-library/react';
-import { VideoPlayer } from './VideoPlayer';
+import { Timeline } from './Timeline';
 
-describe('VideoPlayer', () => {
-  it('displays placeholder when no video is loaded', () => {
-    render(<VideoPlayer project={null} />);
-    expect(screen.getByText('Import a video to get started')).toBeInTheDocument();
+describe('Timeline', () => {
+  it('displays video tracks only', () => {
+    const mockProject = createMockProjectWithVideoTracks();
+    render(<Timeline project={mockProject} />);
+
+    expect(screen.getByText('Video Timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Audio Track')).not.toBeInTheDocument();
   });
 
-  it('plays video when play button is clicked', () => {
+  it('synchronizes with video duration', () => {
     const mockProject = createMockProject();
-    render(<VideoPlayer project={mockProject} />);
+    const { rerender } = render(<Timeline project={mockProject} videoDuration={120} />);
 
-    const playButton = screen.getByRole('button', { name: /play/i });
-    fireEvent.click(playButton);
-
-    // Assert video is playing
+    expect(screen.getByText('Duration: 2:00')).toBeInTheDocument();
   });
 });
 ```
@@ -856,45 +449,104 @@ describe('VideoPlayer', () => {
 Test component interactions:
 
 ```typescript
-describe('VideoEditor Integration', () => {
-  it('updates timeline when AI command is executed', async () => {
-    render(<VideoEditor />);
+describe('Timeline Integration', () => {
+  it('updates video player when timeline is clicked', () => {
+    const mockOnTimeUpdate = jest.fn();
+    render(
+      <VideoEditor>
+        <Timeline onTimeUpdate={mockOnTimeUpdate} />
+      </VideoEditor>
+    );
 
-    const chatInput = screen.getByPlaceholderText('Type your editing command...');
-    fireEvent.change(chatInput, { target: { value: 'Trim the first 10 seconds' } });
+    const timeline = screen.getByRole('button', { name: /timeline/i });
+    fireEvent.click(timeline);
 
-    const sendButton = screen.getByRole('button', { name: /send/i });
-    fireEvent.click(sendButton);
-
-    // Wait for AI response
-    await waitFor(() => {
-      expect(screen.getByText('Processing your request...')).toBeInTheDocument();
-    });
-
-    // Assert timeline is updated
+    expect(mockOnTimeUpdate).toHaveBeenCalled();
   });
 });
 ```
 
+## Accessibility
+
+### 1. ARIA Labels
+
+```typescript
+const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate }) => {
+  return (
+    <div className="timeline" role="region" aria-label="Video Timeline">
+      <div className="timeline-ruler" role="slider" aria-valuenow={currentTime} aria-valuemin={0} aria-valuemax={duration}>
+        {/* Timeline content */}
+      </div>
+    </div>
+  );
+};
+```
+
+### 2. Keyboard Navigation
+
+- Tab navigation through timeline controls
+- Arrow keys for precise seeking
+- Spacebar for play/pause
+- Home/End for jump to start/end
+
+### 3. Screen Reader Support
+
+- Proper heading hierarchy
+- Descriptive labels for interactive elements
+- Time announcements during seeking operations
+
 ## Future Enhancements
 
-### 1. Advanced UI Features
+### 1. Multi-Track Support
 
-- **Drag and Drop**: Visual clip manipulation
-- **Multi-select**: Select and modify multiple clips
-- **Undo/Redo**: History of editing operations
-- **Keyboard Shortcuts**: Power user shortcuts
+- Audio track synchronization
+- Overlay track management
+- Track mixing and effects
 
-### 2. Performance Improvements
+### 2. Advanced Timeline Features
 
-- **Web Workers**: Offload heavy computations
-- **WebAssembly**: Port performance-critical code
-- **Service Workers**: Offline capabilities
-- **IndexedDB**: Better local storage
+- In/out points for clips
+- Speed controls and time stretching
+- Frame-accurate seeking
+- Snap-to-grid functionality
 
-### 3. User Experience
+### 3. Performance Improvements
 
-- **Tutorial Mode**: Interactive learning experience
-- **Custom Themes**: User-defined color schemes
-- **Layout Presets**: Save and restore UI layouts
-- **Collaboration**: Real-time multi-user editing
+- Virtual scrolling for long timelines
+- WebGL rendering for complex effects
+- Worker threads for heavy computations
+- Lazy loading of timeline segments
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Timeline not syncing with video**
+   - Check that `onVideoDurationUpdate` is being called
+   - Verify `videoDuration` is being passed correctly
+   - Ensure video metadata is loaded
+
+2. **Timeline not scrolling to current time**
+   - Check that `currentTime` is being updated
+   - Verify timeline refs are properly set
+   - Ensure `effectiveDuration` is calculated correctly
+
+3. **Performance issues with long videos**
+   - Reduce zoom level for better performance
+   - Check for unnecessary re-renders
+   - Consider implementing virtual scrolling
+
+### Debug Tools
+
+```typescript
+// Enable debug logging
+const DEBUG_TIMELINE = true;
+
+if (DEBUG_TIMELINE) {
+  console.log('Timeline: Duration update:', { videoDuration, projectDuration, effectiveDuration });
+  console.log('Timeline: Current time:', currentTime);
+  console.log('Timeline: Zoom level:', zoom);
+}
+```
+
+This documentation covers the latest timeline synchronization improvements and provides a comprehensive guide for developers working with the video timeline system.

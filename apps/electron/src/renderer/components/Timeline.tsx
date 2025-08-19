@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { VideoProject, TimelineTrack, VideoClip } from '../types';
 import { useProjectStore } from '../stores/projectStore';
 import TimelineTrackComponent from './TimelineTrack';
@@ -9,12 +9,35 @@ interface TimelineProps {
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
   compact?: boolean;
+  videoDuration?: number;
+  onVideoDurationUpdate?: (duration: number) => void;
 }
 
-const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate, compact = false }) => {
+const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate, compact = false, videoDuration, onVideoDurationUpdate }) => {
   const { addClipToTrack, removeClipFromTrack, addTrack, removeTrack } = useProjectStore();
   const [zoom, setZoom] = useState(1);
   const [selectedClip, setSelectedClip] = useState<string | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
+
+  // Use actual video duration for perfect sync, fallback to project duration
+  const effectiveDuration = videoDuration || project?.duration || 0;
+
+  // Auto-scroll timeline to keep current time visible
+  useEffect(() => {
+    if (timelineRef.current && tracksContainerRef.current && currentTime && effectiveDuration) {
+      const timelineWidth = timelineRef.current.offsetWidth;
+      const totalWidth = Math.max(800, effectiveDuration * 100 * zoom);
+      const currentTimePosition = (currentTime / effectiveDuration) * totalWidth;
+      const scrollPosition = currentTimePosition - (timelineWidth / 2);
+
+      // Smooth scroll to keep current time centered
+      tracksContainerRef.current.scrollTo({
+        left: Math.max(0, scrollPosition),
+        behavior: 'smooth'
+      });
+    }
+  }, [currentTime, zoom, effectiveDuration]);
 
   const handleClipDrop = (trackId: string, clip: VideoClip) => {
     addClipToTrack(trackId, clip);
@@ -42,6 +65,32 @@ const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate,
     onTimeUpdate?.(time);
   };
 
+  // Enhanced seeking with visual feedback
+  const handleTimelineSeek = (time: number) => {
+    onTimeUpdate?.(time);
+
+    // Add visual feedback
+    if (timelineRef.current) {
+      timelineRef.current.style.transform = 'scale(1.02)';
+      setTimeout(() => {
+        if (timelineRef.current) {
+          timelineRef.current.style.transform = 'scale(1)';
+        }
+      }, 150);
+    }
+  };
+
+  const formatTime = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (!project) {
     return (
       <div className="timeline bg-gray-800 rounded-lg p-8 text-center">
@@ -56,34 +105,37 @@ const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate,
         {/* Compact Timeline Ruler */}
         <TimelineRuler
           currentTime={currentTime || 0}
-          duration={project.duration}
+          duration={effectiveDuration}
           zoom={zoom}
-          onSeek={handleSeek}
+          onSeek={handleTimelineSeek}
           compact={true}
         />
 
         {/* Compact Timeline Tracks */}
         <div className="timeline-tracks-compact overflow-x-auto">
-          <div className="min-w-full" style={{ width: `${Math.max(400, project.duration * 50 * zoom)}px` }}>
-            {project.tracks.slice(0, 3).map((track) => (
-              <div key={track.id} className="h-8 border-b border-gray-600 last:border-b-0">
-                <div className="flex items-center h-full px-2">
-                  <span className="text-xs text-gray-400 w-20 truncate">{track.name}</span>
-                  <div className="flex-1 h-full relative">
-                    {track.clips.map((clip) => (
-                      <div
-                        key={clip.id}
-                        className="absolute h-4 bg-blue-500/60 rounded top-1/2 transform -translate-y-1/2"
-                        style={{
-                          left: `${(clip.startTime / project.duration) * 100}%`,
-                          width: `${(clip.duration / project.duration) * 100}%`
-                        }}
-                      />
-                    ))}
+          <div className="min-w-full" style={{ width: `${Math.max(400, effectiveDuration * 50 * zoom)}px` }}>
+            {project.tracks
+              .filter(track => track.type === 'video') // Only show video tracks
+              .slice(0, 3)
+              .map((track) => (
+                <div key={track.id} className="h-8 border-b border-gray-600 last:border-b-0">
+                  <div className="flex items-center h-full px-2">
+                    <span className="text-xs text-gray-400 w-20 truncate">{track.name}</span>
+                    <div className="flex-1 h-full relative">
+                      {track.clips.map((clip) => (
+                        <div
+                          key={clip.id}
+                          className="absolute h-4 bg-blue-500/60 rounded top-1/2 transform -translate-y-1/2"
+                          style={{
+                            left: `${(clip.startTime / effectiveDuration) * 100}%`,
+                            width: `${(clip.duration / effectiveDuration) * 100}%`
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       </div>
@@ -91,12 +143,12 @@ const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate,
   }
 
   return (
-    <div className="timeline bg-gray-800 rounded-lg overflow-hidden">
+    <div className="timeline bg-gray-800 rounded-lg overflow-hidden" ref={timelineRef}>
       {/* Timeline Header with Zoom Controls */}
       <div className="timeline-header bg-gray-700 px-4 py-2 border-b border-gray-600">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h3 className="text-white font-medium">Timeline</h3>
+            <h3 className="text-white font-medium">Video Timeline</h3>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => handleZoomChange(zoom - 0.2)}
@@ -119,24 +171,9 @@ const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate,
           </div>
 
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => handleAddTrack('video')}
-              className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
-            >
-              + Video
-            </button>
-            <button
-              onClick={() => handleAddTrack('audio')}
-              className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
-            >
-              + Audio
-            </button>
-            <button
-              onClick={() => handleAddTrack('overlay')}
-              className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded"
-            >
-              + Overlay
-            </button>
+            <span className="text-gray-400 text-sm">
+              Duration: {formatTime(effectiveDuration)}
+            </span>
           </div>
         </div>
       </div>
@@ -144,39 +181,41 @@ const Timeline: React.FC<TimelineProps> = ({ project, currentTime, onTimeUpdate,
       {/* Timeline Ruler */}
       <TimelineRuler
         currentTime={currentTime || 0}
-        duration={project.duration}
+        duration={effectiveDuration}
         zoom={zoom}
-        onSeek={handleSeek}
+        onSeek={handleTimelineSeek}
       />
 
       {/* Timeline Tracks */}
-      <div className="timeline-tracks overflow-x-auto">
-        <div className="min-w-full" style={{ width: `${Math.max(800, project.duration * 100 * zoom)}px` }}>
-          {project.tracks.map((track) => (
-            <TimelineTrackComponent
-              key={track.id}
-              track={track}
-              zoom={zoom}
-              onClipDrop={handleClipDrop}
-              onClipRemove={handleClipRemove}
-              onRemoveTrack={handleRemoveTrack}
-              selectedClip={selectedClip}
-              onClipSelect={setSelectedClip}
-            />
-          ))}
+      <div className="timeline-tracks overflow-x-auto" ref={tracksContainerRef}>
+        <div className="min-w-full" style={{ width: `${Math.max(800, effectiveDuration * 100 * zoom)}px` }}>
+          {project.tracks
+            .filter(track => track.type === 'video') // Only show video tracks
+            .map((track) => (
+              <TimelineTrackComponent
+                key={track.id}
+                track={track}
+                zoom={zoom}
+                onClipDrop={handleClipDrop}
+                onClipRemove={handleClipRemove}
+                onRemoveTrack={handleRemoveTrack}
+                selectedClip={selectedClip}
+                onClipSelect={setSelectedClip}
+              />
+            ))}
         </div>
       </div>
 
       {/* Empty State */}
-      {project.tracks.length === 0 && (
+      {project.tracks.filter(track => track.type === 'video').length === 0 && (
         <div className="p-8 text-center">
           <div className="w-16 h-16 mx-auto mb-4 text-gray-500">
             <svg fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
             </svg>
           </div>
-          <p className="text-gray-400 mb-2">No tracks yet</p>
-          <p className="text-gray-500 text-sm">Add tracks to start building your timeline</p>
+          <p className="text-gray-400 mb-2">No video tracks</p>
+          <p className="text-gray-500 text-sm">Import a video to see it in the timeline</p>
         </div>
       )}
     </div>

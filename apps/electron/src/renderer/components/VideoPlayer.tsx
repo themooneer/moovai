@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { VideoProject } from '../types';
 
 // Utility function to construct full video URL
@@ -16,25 +16,100 @@ interface VideoPlayerProps {
   project: VideoProject | null;
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
+  onVideoDurationUpdate?: (duration: number) => void;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate, onVideoDurationUpdate }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [duration, setDuration] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
-  const handleTimeUpdate = () => {
-    if (videoRef.current && onTimeUpdate) {
-      onTimeUpdate(videoRef.current.currentTime);
+  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
+
+  // Handle external time updates (from timeline)
+  useEffect(() => {
+    if (videoRef.current && currentTime !== undefined && Math.abs(currentTime - currentVideoTime) > 0.1) {
+      videoRef.current.currentTime = currentTime;
+      setCurrentVideoTime(currentTime);
+
+      // Add visual feedback for seeking
+      if (videoRef.current.parentElement) {
+        videoRef.current.parentElement.style.transform = 'scale(1.01)';
+        setTimeout(() => {
+          if (videoRef.current?.parentElement) {
+            videoRef.current.parentElement.style.transform = 'scale(1)';
+          }
+        }, 150);
+      }
     }
+  }, [currentTime, currentVideoTime]);
+
+  // Enhanced time update handling for better timeline sync
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    const time = video.currentTime;
+
+    // Update local state
+    setCurrentVideoTime(time);
+
+    // Notify parent component for timeline sync
+    onTimeUpdate?.(time);
   };
 
-  const handleLoadedMetadata = () => {
+  // Handle seeking with better precision
+  const handleSeek = (time: number) => {
     if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+      const clampedTime = Math.max(0, Math.min(duration, time));
+      videoRef.current.currentTime = clampedTime;
+      setCurrentVideoTime(clampedTime);
+      onTimeUpdate?.(clampedTime);
     }
   };
+
+  // Handle volume changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // Keyboard shortcuts for timeline control
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!videoRef.current) return;
+
+      const currentTime = videoRef.current.currentTime;
+      const duration = videoRef.current.duration;
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          handleSeek(Math.max(0, currentTime - 5)); // 5 seconds back
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleSeek(Math.min(duration, currentTime + 5)); // 5 seconds forward
+          break;
+        case ' ':
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case 'Home':
+          e.preventDefault();
+          handleSeek(0); // Go to start
+          break;
+        case 'End':
+          e.preventDefault();
+          handleSeek(duration); // Go to end
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handlePlayPause = () => {
     if (videoRef.current) {
@@ -43,22 +118,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
       } else {
         videoRef.current.play();
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume;
-    }
-  };
-
-  const handleSeek = (time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      onTimeUpdate?.(time);
-    }
   };
 
   const formatTime = (seconds: number): string => {
@@ -72,22 +136,51 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
-
   return (
     <div className="video-player bg-transparent rounded-2xl overflow-hidden">
       <div className="video-container relative">
         {firstVideoClip ? (
-          <video
-            ref={videoRef}
-            src={getVideoUrl(firstVideoClip.path)}
-            className="w-full h-auto max-h-[70vh] rounded-xl shadow-2xl"
-            onTimeUpdate={handleTimeUpdate}
-            onLoadedMetadata={handleLoadedMetadata}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-          />
+          <div className="relative">
+            {/* Simple native HTML5 video element */}
+            <video
+              ref={videoRef}
+              key={`video-${firstVideoClip?.id || 'placeholder'}`}
+              className="w-full h-auto rounded-xl shadow-2xl"
+              style={{
+                minHeight: '300px',
+                maxHeight: '70vh'
+              }}
+              src={getVideoUrl(firstVideoClip.path)}
+              preload="metadata"
+              onLoadedMetadata={(e) => {
+                const video = e.currentTarget;
+                if (video.duration) {
+                  setDuration(video.duration);
+                  onVideoDurationUpdate?.(video.duration);
+                }
+              }}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => setIsPlaying(false)}
+              onError={(e) => console.error('Video error:', e)}
+            />
+
+            {/* Custom overlay for better UX */}
+            <div className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden">
+              <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-lg text-sm font-medium backdrop-blur-sm">
+                {firstVideoClip.name}
+              </div>
+
+              {/* Keyboard shortcuts hint */}
+              <div className="absolute bottom-4 right-4 bg-black/50 text-white px-3 py-1 rounded-lg text-xs backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity">
+                <div className="flex items-center space-x-2">
+                  <span>⌨️</span>
+                  <span>← → 5s, Space Play/Pause, Home/End</span>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="video-placeholder flex items-center justify-center h-96 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border-2 border-dashed border-gray-600/50 backdrop-blur-sm transition-all duration-300 hover:border-purple-500/50 hover:bg-gray-800/70">
             <div className="text-center">
@@ -130,7 +223,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
             {/* Time Display and Progress Bar */}
             <div className="flex-1 space-y-3">
               <div className="flex items-center justify-between text-sm text-gray-300">
-                <span className="font-mono">{formatTime(currentTime || 0)}</span>
+                <span className="font-mono">{formatTime(currentVideoTime)}</span>
                 <span className="text-gray-500">/</span>
                 <span className="font-mono">{formatTime(duration)}</span>
               </div>
@@ -139,15 +232,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
                   type="range"
                   min="0"
                   max={duration || 0}
-                  value={currentTime || 0}
+                  value={currentVideoTime}
                   onChange={(e) => handleSeek(parseFloat(e.target.value))}
                   className="w-full h-3 bg-gray-700/50 rounded-xl appearance-none cursor-pointer slider"
                   style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((currentTime || 0) / (duration || 1)) * 100}%, #4b5563 ${((currentTime || 0) / (duration || 1)) * 100}%, #4b5563 100%)`
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 100%)`
                   }}
                 />
                 <div className="absolute top-0 left-0 h-3 bg-blue-500 rounded-xl transition-all duration-100 ease-out"
-                     style={{ width: `${((currentTime || 0) / (duration || 1)) * 100}%` }}>
+                     style={{ width: `${((currentVideoTime) / (duration || 1)) * 100}%` }}>
                 </div>
               </div>
             </div>

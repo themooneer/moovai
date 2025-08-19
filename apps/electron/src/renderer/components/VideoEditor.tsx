@@ -11,6 +11,7 @@ const VideoEditor: React.FC = () => {
   const { currentProject, saveProject, addClipToTrack, createProject } = useProjectStore();
   const { messages, sendMessage } = useAIChatStore();
   const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
   const [isTopBarCollapsed, setIsTopBarCollapsed] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isAIChatExpanded, setIsAIChatExpanded] = useState(true);
@@ -27,6 +28,10 @@ const VideoEditor: React.FC = () => {
 
   const handleTimeUpdate = (time: number) => {
     setCurrentTime(time);
+  };
+
+  const handleVideoDurationUpdate = (duration: number) => {
+    setVideoDuration(duration);
   };
 
   const handleSaveProject = async () => {
@@ -214,7 +219,7 @@ const VideoEditor: React.FC = () => {
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col">
+    <div className="h-full bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col overflow-auto">
       {/* Top Bar - Collapsible */}
       <div className={`hidden bg-black/20 border-b border-white/10 transition-all duration-300 ease-out ${
         isTopBarCollapsed ? 'h-16' : 'h-24'
@@ -277,6 +282,8 @@ const VideoEditor: React.FC = () => {
               currentTime={currentTime}
               onTimeUpdate={handleTimeUpdate}
               compact={true}
+              videoDuration={videoDuration}
+              onVideoDurationUpdate={handleVideoDurationUpdate}
             />
           </div>
         )}
@@ -301,6 +308,7 @@ const VideoEditor: React.FC = () => {
                   project={currentProject}
                   currentTime={currentTime}
                   onTimeUpdate={handleTimeUpdate}
+                  onVideoDurationUpdate={handleVideoDurationUpdate}
                 />
               </div>
 
@@ -371,6 +379,8 @@ const VideoEditor: React.FC = () => {
             currentTime={currentTime}
             onTimeUpdate={handleTimeUpdate}
             compact={false}
+            videoDuration={videoDuration}
+            onVideoDurationUpdate={handleVideoDurationUpdate}
           />
         </div>
       </div>
