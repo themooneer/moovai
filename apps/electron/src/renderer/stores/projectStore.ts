@@ -46,6 +46,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         console.log('✅ ProjectStore: State updated:', updatedState);
         return updatedState;
       });
+      return newProject;
     } catch (error) {
       console.error('❌ ProjectStore: Project creation failed:', error);
       set({

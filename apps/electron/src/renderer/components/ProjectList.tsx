@@ -21,11 +21,12 @@ const ProjectList: React.FC = () => {
 
     try {
       // Use the store's createProject method which calls the backend API
-      await createProject(formData.name, { width, height }, Number(formData.fps));
+      const newProject = await createProject(formData.name, { width, height }, Number(formData.fps));
+      console.log('New project created:', newProject);
 
       // The store will automatically update currentProject
       // Navigate to the editor (the project will be loaded automatically)
-      navigate('/editor');
+      navigate(`/editor/${(newProject as any).id}`);
 
       setShowCreateForm(false);
       setFormData({ name: '', resolution: '1920x1080', fps: '30' });
