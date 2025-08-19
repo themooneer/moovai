@@ -1,13 +1,12 @@
 import axios from 'axios';
 
-// Create axios instance with default configuration
-export const api = axios.create({
-  baseURL: 'http://localhost:3001',
+// Base API configuration
+const api = axios.create({
+  baseURL: 'http://localhost:3001/api',
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
+
+export { api };
 
 // Request interceptor
 api.interceptors.request.use(
@@ -47,27 +46,27 @@ export const videoAPI = {
   upload: (file: File, onProgress?: (progress: number) => void) => {
     const formData = new FormData();
     formData.append('video', file);
-    return api.post('/api/video/upload', formData, {
+    return api.post('/video/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-      onUploadProgress: (progressEvent) => {
-        if (onProgress && progressEvent.total) {
+      onUploadProgress: onProgress ? (progressEvent) => {
+        if (progressEvent.total) {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           onProgress(progress);
         }
-      },
+      } : undefined,
     });
   },
 
   getInfo: (videoId: string) => {
     // URL-encode the videoId to handle file paths with forward slashes
     const encodedId = encodeURIComponent(videoId);
-    return api.get(`/api/video/info/${encodedId}`);
+    return api.get(`/video/info/${encodedId}`);
   },
 
   process: (inputPath: string, outputPath: string, operations: any[]) => {
-    return api.post('/api/video/process', {
+    return api.post('/video/process', {
       inputPath,
       outputPath,
       operations,
@@ -75,29 +74,29 @@ export const videoAPI = {
   },
 
   getProgress: (operationId: string) => {
-    return api.get(`/api/video/progress/${operationId}`);
+    return api.get(`/video/progress/${operationId}`);
   },
 };
 
 // AI API methods
 export const aiAPI = {
   chat: (message: string, projectContext?: any) => {
-    return api.post('/api/ai/chat', {
+    return api.post('/ai/chat', {
       message,
       projectContext,
     });
   },
 
   getStatus: () => {
-    return api.get('/api/ai/status');
+    return api.get('/ai/status');
   },
 
   getCommands: () => {
-    return api.get('/api/ai/commands');
+    return api.get('/ai/commands');
   },
 
   execute: (command: string, parameters: any) => {
-    return api.post('/api/ai/execute', {
+    return api.post('/ai/execute', {
       command,
       parameters,
     });
@@ -107,32 +106,30 @@ export const aiAPI = {
 // Project API methods
 export const projectAPI = {
   create: (name: string, resolution?: { width: number; height: number }, fps?: number) => {
-    return api.post('/api/project', { name, resolution, fps });
+    return api.post('/project', { name, resolution, fps });
   },
 
   get: (projectId: string) => {
-    return api.get(`/api/project/${projectId}`);
+    return api.get(`/project/${projectId}`);
   },
 
   update: (projectId: string, updates: any) => {
-    return api.put(`/api/project/${projectId}`, updates);
+    return api.put(`/project/${projectId}`, updates);
   },
 
   delete: (projectId: string) => {
-    return api.delete(`/api/project/${projectId}`);
+    return api.delete(`/project/${projectId}`);
   },
 
   addTrack: (projectId: string, name: string, type: 'video' | 'audio' | 'overlay') => {
-    return api.post(`/api/project/${projectId}/tracks`, { name, type });
+    return api.post(`/project/${projectId}/tracks`, { name, type });
   },
 
   removeTrack: (projectId: string, trackId: string) => {
-    return api.delete(`/api/project/${projectId}/tracks/${trackId}`);
+    return api.delete(`/project/${projectId}/tracks/${trackId}`);
   },
 
   export: (projectId: string, outputPath: string, format: string = 'mp4') => {
-    return api.post(`/api/project/${projectId}/export`, { outputPath, format });
+    return api.post(`/project/${projectId}/export`, { outputPath, format });
   },
 };
-
-export default api;

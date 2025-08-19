@@ -155,8 +155,12 @@ function generateClientId(): string {
 }
 
 // Export WebSocket server instance for use in other services
-export function getWebSocketServer(): WebSocketServer | null {
-  // This would need to be implemented to get the actual WSS instance
-  // For now, return null
-  return null;
+let globalWss: ExtendedWebSocketServer | null = null;
+
+export function setWebSocketServer(wss: ExtendedWebSocketServer): void {
+  globalWss = wss;
+}
+
+export function getWebSocketServer(): ExtendedWebSocketServer | null {
+  return globalWss;
 }

@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { FFmpegOperation, VideoProcessingResult } from '@ai-video-editor/shared';
 import { generateId } from '@ai-video-editor/shared';
+import { getWebSocketServer } from '../websocket';
 
 // Check if system FFmpeg is available, otherwise fall back to static version
 try {
@@ -33,6 +34,14 @@ export class FFmpegService {
     operations: FFmpegOperation[]
   ): Promise<VideoProcessingResult> {
     try {
+      console.log('🎬 FFmpegService: processVideo called with file renaming strategy');
+      console.log('🎬 FFmpegService: Input path:', inputPath);
+      console.log('🎬 FFmpegService: Output path:', outputPath);
+      console.log('🎬 FFmpegService: Operations:', operations.map(op => op.type));
+
+      // Store original input path for renaming later
+      const originalInputPath = inputPath;
+
       // Ensure output directory exists
       const outputDir = path.dirname(outputPath);
       await fs.mkdir(outputDir, { recursive: true });
@@ -49,9 +58,14 @@ export class FFmpegService {
       // Get final video info
       const videoInfo = await this.getVideoInfo(currentOutput);
 
+      // Implement file renaming strategy
+      console.log('🎬 FFmpegService: About to call file renaming strategy');
+      await this.renameFilesAfterProcessing(originalInputPath, currentOutput);
+      console.log('🎬 FFmpegService: File renaming strategy completed');
+
       return {
         success: true,
-        outputPath: currentOutput,
+        outputPath: originalInputPath, // Return the original path since we renamed the file
         duration: videoInfo.duration
       };
     } catch (error) {
@@ -79,6 +93,9 @@ export class FFmpegService {
     operation.outputFile = outputFile;
     this.operations.set(operationId, operation);
 
+    // Emit WebSocket update for operation start
+    this.emitWebSocketUpdate(operation);
+
     try {
       const result = await this.executeFFmpegCommand(operation, inputFile, outputFile);
 
@@ -87,11 +104,17 @@ export class FFmpegService {
       operation.progress = 100;
       this.operations.set(operationId, operation);
 
+      // Emit WebSocket update for operation completion
+      this.emitWebSocketUpdate(operation);
+
       return outputFile;
     } catch (error) {
       // Update operation status
       operation.status = 'error';
       this.operations.set(operationId, operation);
+
+      // Emit WebSocket update for operation error
+      this.emitWebSocketUpdate(operation);
       throw error;
     }
   }
@@ -103,6 +126,8 @@ export class FFmpegService {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath);
+
+
 
       // Apply operation-specific filters
       switch (operation.type) {
@@ -173,19 +198,53 @@ export class FFmpegService {
           if (op) {
             op.progress = Math.round((progress.percent || 0));
             this.operations.set(operation.id, op);
+            console.log(`FFmpeg progress for operation ${operation.id}: ${op.progress}%`);
+
+            // Emit WebSocket update
+            this.emitWebSocketUpdate(op);
           }
         })
-        .on('end', () => {
+        .on('end', async () => {
+          // Mark operation as completed
+          const op = this.operations.get(operation.id);
+          if (op) {
+            op.status = 'completed';
+            op.progress = 100;
+            this.operations.set(operation.id, op);
+
+            // Get video info for the completed operation
+            try {
+              const videoInfo = await this.getVideoInfo(outputPath);
+
+              // Emit completion notification with video info
+              this.emitWebSocketUpdate(op);
+              this.emitWebSocketCompletion(operation, outputPath, videoInfo);
+            } catch (error) {
+              console.error('Failed to get video info for completed operation:', error);
+              // Still emit completion notification
+              this.emitWebSocketUpdate(op);
+              this.emitWebSocketCompletion(operation, outputPath);
+            }
+          }
           resolve();
         })
         .on('error', (error: any) => {
+          // Mark operation as failed
+          const op = this.operations.get(operation.id);
+          if (op) {
+            op.status = 'error';
+            this.operations.set(operation.id, op);
+
+            // Emit error notification
+            this.emitWebSocketUpdate(op);
+          }
           reject(error);
         })
         .run();
     });
   }
 
-  private generateOutputPath(inputPath: string, operationType: string): string {
+  generateOutputPath(inputPath: string, operationType: string): string {
     const dir = path.dirname(inputPath);
     const name = path.basename(inputPath, path.extname(inputPath));
     const timestamp = Date.now();
@@ -232,5 +291,79 @@ export class FFmpegService {
 
   getAllOperations(): FFmpegOperation[] {
     return Array.from(this.operations.values());
+  }
+
+  private emitWebSocketUpdate(operation: FFmpegOperation): void {
+    const wss = getWebSocketServer();
+    if (wss) {
+      wss.broadcast({
+        type: 'ffmpeg_progress',
+        operationId: operation.id,
+        operation: operation,
+        progress: operation.progress,
+        status: operation.status
+      });
+    }
+  }
+
+  private emitWebSocketCompletion(operation: FFmpegOperation, outputPath: string, videoInfo?: { duration: number; width: number; height: number; fps: number }): void {
+    const wss = getWebSocketServer();
+    if (wss) {
+      wss.broadcast({
+        type: 'ffmpeg_completed',
+        operationId: operation.id,
+        operationType: operation.type,
+        outputPath: outputPath,
+        success: true,
+        timestamp: new Date().toISOString(),
+        videoInfo: videoInfo || {}
+      });
+    }
+  }
+
+  private async renameFilesAfterProcessing(originalInputPath: string, newOutputPath: string): Promise<void> {
+    try {
+      console.log('🎬 FFmpegService: Starting file renaming strategy');
+      console.log('🎬 FFmpegService: Original path:', originalInputPath);
+      console.log('🎬 FFmpegService: New output path:', newOutputPath);
+
+      // Check if both files exist
+      const originalExists = await fs.access(originalInputPath).then(() => true).catch(() => false);
+      const newExists = await fs.access(newOutputPath).then(() => true).catch(() => false);
+
+      if (!originalExists) {
+        console.warn('🎬 FFmpegService: Original file does not exist:', originalInputPath);
+        return;
+      }
+
+      if (!newExists) {
+        console.warn('🎬 FFmpegService: New processed file does not exist:', newOutputPath);
+        return;
+      }
+
+      // Create backup path for original file
+      const originalDir = path.dirname(originalInputPath);
+      const originalName = path.basename(originalInputPath, path.extname(originalInputPath));
+      const originalExt = path.extname(originalInputPath);
+      const backupPath = path.join(originalDir, `${originalName}_old${originalExt}`);
+
+      // Step 1: Rename original file to backup
+      console.log('🎬 FFmpegService: Renaming original to backup:', backupPath);
+      await fs.rename(originalInputPath, backupPath);
+
+      // Step 2: Rename new processed file to original name
+      console.log('🎬 FFmpegService: Renaming new file to original name:', originalInputPath);
+      await fs.rename(newOutputPath, originalInputPath);
+
+      // Step 3: Clean up backup file
+      console.log('🎬 FFmpegService: Cleaning up backup file');
+      await fs.unlink(backupPath);
+
+      console.log('✅ FFmpegService: File renaming completed successfully');
+      console.log('✅ FFmpegService: New video is now available at:', originalInputPath);
+    } catch (error) {
+      console.error('❌ FFmpegService: Error during file renaming:', error);
+      // Don't throw error - let the process continue
+    }
   }
 }

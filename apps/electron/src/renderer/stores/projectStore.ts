@@ -32,7 +32,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     console.log('🔄 ProjectStore: Starting project creation...', { name, resolution, fps });
     set({ isLoading: true, error: null });
     try {
-      const response = await api.post('/api/project', { name, resolution, fps });
+      const response = await api.post('/project', { name, resolution, fps });
       const newProject = response.data.project;
       console.log('✅ ProjectStore: Backend response received:', newProject);
 
@@ -58,7 +58,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadProject: async (projectId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await api.get(`/api/project/${projectId}`);
+      const response = await api.get(`/project/${projectId}`);
       const project = response.data;
 
       set({ currentProject: project, isLoading: false });
@@ -73,7 +73,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   saveProject: async (project: VideoProject) => {
     set({ isLoading: true, error: null });
     try {
-      await api.put(`/api/project/${project.id}`, project);
+      await api.put(`/project/${project.id}`, project);
 
       set(state => ({
         projects: state.projects.map(p => p.id === project.id ? project : p),
@@ -91,7 +91,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   deleteProject: async (projectId: string) => {
     set({ isLoading: true, error: null });
     try {
-      await api.delete(`/api/project/${projectId}`);
+      await api.delete(`/project/${projectId}`);
 
       set(state => ({
         projects: state.projects.filter(p => p.id !== projectId),
@@ -121,15 +121,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         clips: [],
         enabled: true
       };
-      updatedProject.tracks.push(newTrack);
+      updatedProject.tracks = [...updatedProject.tracks, newTrack];
       trackId = newTrack.id;
     }
 
-    const track = updatedProject.tracks.find(t => t.id === trackId);
-    if (track) {
-      track.clips.push(clip);
+    const trackIndex = updatedProject.tracks.findIndex(t => t.id === trackId);
+    if (trackIndex !== -1) {
+      // Create a new track with the updated clips array
+      const updatedTrack = {
+        ...updatedProject.tracks[trackIndex],
+        clips: [...updatedProject.tracks[trackIndex].clips, clip]
+      };
+
+      // Update the tracks array immutably
+      updatedProject.tracks = [
+        ...updatedProject.tracks.slice(0, trackIndex),
+        updatedTrack,
+        ...updatedProject.tracks.slice(trackIndex + 1)
+      ];
+
       updatedProject.duration = Math.max(updatedProject.duration, clip.endTime);
 
+      console.log('🎬 ProjectStore: Adding clip to track, updated project:', updatedProject);
       set({ currentProject: updatedProject });
     }
   },
@@ -139,12 +152,24 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!currentProject) return;
 
     const updatedProject = { ...currentProject };
-    const track = updatedProject.tracks.find(t => t.id === trackId);
-    if (track) {
-      track.clips = track.clips.filter(c => c.id !== clipId);
+    const trackIndex = updatedProject.tracks.findIndex(t => t.id === trackId);
+
+    if (trackIndex !== -1) {
+      const track = updatedProject.tracks[trackIndex];
+      const updatedTrack = {
+        ...track,
+        clips: track.clips.filter(c => c.id !== clipId)
+      };
+
+      // Update the tracks array immutably
+      updatedProject.tracks = [
+        ...updatedProject.tracks.slice(0, trackIndex),
+        updatedTrack,
+        ...updatedProject.tracks.slice(trackIndex + 1)
+      ];
 
       // Recalculate project duration
-      const maxEndTime = Math.max(...track.clips.map(c => c.endTime), 0);
+      const maxEndTime = Math.max(...updatedTrack.clips.map(c => c.endTime), 0);
       updatedProject.duration = Math.max(updatedProject.duration, maxEndTime);
 
       set({ currentProject: updatedProject });
@@ -156,14 +181,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!currentProject) return;
 
     const updatedProject = { ...currentProject };
-    const track = updatedProject.tracks.find(t => t.id === trackId);
-    if (track) {
+    const trackIndex = updatedProject.tracks.findIndex(t => t.id === trackId);
+
+    if (trackIndex !== -1) {
+      const track = updatedProject.tracks[trackIndex];
       const clipIndex = track.clips.findIndex(c => c.id === clipId);
+
       if (clipIndex !== -1) {
-        track.clips[clipIndex] = { ...track.clips[clipIndex], ...updates };
+        const updatedClip = { ...track.clips[clipIndex], ...updates };
+        const updatedTrack = {
+          ...track,
+          clips: [
+            ...track.clips.slice(0, clipIndex),
+            updatedClip,
+            ...track.clips.slice(clipIndex + 1)
+          ]
+        };
+
+        // Update the tracks array immutably
+        updatedProject.tracks = [
+          ...updatedProject.tracks.slice(0, trackIndex),
+          updatedTrack,
+          ...updatedProject.tracks.slice(trackIndex + 1)
+        ];
 
         // Recalculate project duration
-        const maxEndTime = Math.max(...track.clips.map(c => c.endTime), 0);
+        const maxEndTime = Math.max(...updatedTrack.clips.map(c => c.endTime), 0);
         updatedProject.duration = Math.max(updatedProject.duration, maxEndTime);
 
         set({ currentProject: updatedProject });

@@ -1,185 +1,290 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { VideoProject } from '../types';
-
-// Utility function to construct full video URL
-const getVideoUrl = (path: string): string => {
-  // If path already has http/https, return as is
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-
-  // Construct full URL from backend server
-  return `http://localhost:3001/${path}`;
-};
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useProjectStore } from '../stores/projectStore';
+import { useAIChatStore } from '../stores/aiChatStore';
+import videojs from 'video.js';
+import 'video.js/dist/video-js.css';
 
 interface VideoPlayerProps {
-  project: VideoProject | null;
-  currentTime?: number;
   onTimeUpdate?: (time: number) => void;
   onVideoDurationUpdate?: (duration: number) => void;
+  currentTime?: number;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeUpdate, onVideoDurationUpdate }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({
+  onTimeUpdate,
+  onVideoDurationUpdate,
+  currentTime
+}) => {
+  // Player refs
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<any>(null);
+
+  // Project and AI chat state
+  const project = useProjectStore(state => state.currentProject);
+  const { processingVideo } = useAIChatStore();
+
+  // Video state
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(1);
-  const [duration, setDuration] = useState(0);
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isLoadingVideo, setIsLoadingVideo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const firstVideoClip = project?.tracks.find(track => track.type === 'video')?.clips[0];
+  // Get the latest video clip
+  const videoTracks = project?.tracks.filter(track => track.type === 'video') || [];
+  const videoClip = videoTracks.length > 0
+    ? videoTracks[0].clips[videoTracks[0].clips.length - 1]
+    : null;
 
-  // Handle external time updates (from timeline)
+  // Utility function to construct video URLs with proper cache busting
+  const getVideoUrl = useCallback((path: string): string => {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    // Use the static file serving endpoint from the backend with cache busting
+    const backendUrl = 'http://localhost:3001';
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(7);
+    return `${backendUrl}/${path}?t=${timestamp}&r=${randomId}`;
+  }, []);
+
+  // Simple Video.js implementation
   useEffect(() => {
-    if (videoRef.current && currentTime !== undefined && Math.abs(currentTime - currentVideoTime) > 0.1) {
-      videoRef.current.currentTime = currentTime;
-      setCurrentVideoTime(currentTime);
+    if (!videoClip?.path || !videoRef.current) return;
 
-      // Add visual feedback for seeking
-      if (videoRef.current.parentElement) {
-        videoRef.current.parentElement.style.transform = 'scale(1.01)';
-        setTimeout(() => {
-          if (videoRef.current?.parentElement) {
-            videoRef.current.parentElement.style.transform = 'scale(1)';
-          }
-        }, 150);
+    console.log('🎬 VideoPlayer: Setting up Video.js player for:', videoClip.path);
+
+    // Clean up any existing player instance
+    if (playerRef.current) {
+      try {
+        console.log('🎬 VideoPlayer: Disposing existing Video.js instance');
+        playerRef.current.dispose();
+        playerRef.current = null;
+      } catch (error) {
+        console.warn('🎬 VideoPlayer: Error disposing Video.js:', error);
       }
     }
-  }, [currentTime, currentVideoTime]);
 
-  // Enhanced time update handling for better timeline sync
-  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const video = e.currentTarget;
-    const time = video.currentTime;
+    // Reset states
+    setIsLoadingVideo(true);
+    setError(null);
+    setCurrentVideoTime(0);
+    setDuration(0);
+    setIsPlaying(false);
 
-    // Update local state
-    setCurrentVideoTime(time);
+    // Initialize Video.js
+    const initPlayer = () => {
+      try {
+        console.log('🎬 VideoPlayer: Creating Video.js instance');
 
-    // Notify parent component for timeline sync
-    onTimeUpdate?.(time);
-  };
+        playerRef.current = videojs(videoRef.current!, {
+          controls: true,
+          fluid: true,
+          responsive: true,
+          preload: 'metadata',
+          autoplay: false,
+          muted: false,
+          volume: volume,
+          sources: [{
+            src: getVideoUrl(videoClip.path),
+            type: 'video/mp4'
+          }]
+        });
 
-  // Handle seeking with better precision
-  const handleSeek = (time: number) => {
-    if (videoRef.current) {
-      const clampedTime = Math.max(0, Math.min(duration, time));
-      videoRef.current.currentTime = clampedTime;
-      setCurrentVideoTime(clampedTime);
-      onTimeUpdate?.(clampedTime);
-    }
-  };
+        // Video.js event listeners
+        playerRef.current.ready(() => {
+          console.log('🎬 VideoPlayer: Video.js ready');
+          setIsLoadingVideo(false);
+          setError(null);
+        });
 
-  // Handle volume changes
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.volume = volume;
-    }
-  }, [volume]);
+        playerRef.current.on('loadedmetadata', () => {
+          console.log('🎬 VideoPlayer: Metadata loaded, duration:', playerRef.current.duration());
+          const videoDuration = playerRef.current.duration();
+          if (videoDuration && !isNaN(videoDuration)) {
+            setDuration(videoDuration);
+            onVideoDurationUpdate?.(videoDuration);
+          }
+          setIsLoadingVideo(false);
+        });
 
-  // Keyboard shortcuts for timeline control
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!videoRef.current) return;
+        playerRef.current.on('timeupdate', () => {
+          const currentTime = playerRef.current.currentTime();
+          if (currentTime !== undefined && !isNaN(currentTime)) {
+            setCurrentVideoTime(currentTime);
+            onTimeUpdate?.(currentTime);
+          }
+        });
 
-      const currentTime = videoRef.current.currentTime;
-      const duration = videoRef.current.duration;
+        playerRef.current.on('play', () => {
+          console.log('🎬 VideoPlayer: Play event');
+          setIsPlaying(true);
+        });
 
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          handleSeek(Math.max(0, currentTime - 5)); // 5 seconds back
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          handleSeek(Math.min(duration, currentTime + 5)); // 5 seconds forward
-          break;
-        case ' ':
-          e.preventDefault();
-          handlePlayPause();
-          break;
-        case 'Home':
-          e.preventDefault();
-          handleSeek(0); // Go to start
-          break;
-        case 'End':
-          e.preventDefault();
-          handleSeek(duration); // Go to end
-          break;
+        playerRef.current.on('pause', () => {
+          console.log('🎬 VideoPlayer: Pause event');
+          setIsPlaying(false);
+        });
+
+        playerRef.current.on('ended', () => {
+          console.log('🎬 VideoPlayer: Ended event');
+          setIsPlaying(false);
+        });
+
+        playerRef.current.on('error', () => {
+          console.error('🎬 VideoPlayer: Video.js error');
+          setError('Video playback error');
+          setIsLoadingVideo(false);
+        });
+
+      } catch (error) {
+        console.error('🎬 VideoPlayer: Error creating Video.js:', error);
+        setError('Failed to initialize video player');
+        setIsLoadingVideo(false);
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    // Initialize with a small delay to ensure DOM is ready
+    const timer = setTimeout(initPlayer, 100);
 
-  const handlePlayPause = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play();
+    return () => {
+      clearTimeout(timer);
+      if (playerRef.current) {
+        try {
+          playerRef.current.dispose();
+          playerRef.current = null;
+        } catch (error) {
+          console.warn('🎬 VideoPlayer: Error disposing Video.js:', error);
+        }
       }
+    };
+  }, [videoClip?.path, volume, onVideoDurationUpdate, onTimeUpdate, getVideoUrl]);
+
+  // Volume sync
+  useEffect(() => {
+    if (playerRef.current && playerRef.current.volume) {
+      playerRef.current.volume(volume);
     }
-  };
+  }, [volume]);
 
-  const handleVolumeChange = (newVolume: number) => {
-    setVolume(newVolume);
-  };
-
-  const formatTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // Update external time changes
+  useEffect(() => {
+    if (currentTime !== undefined && Math.abs(currentTime - currentVideoTime) > 0.1) {
+      if (playerRef.current && playerRef.current.currentTime) {
+        playerRef.current.currentTime(currentTime);
+      }
+      setCurrentVideoTime(currentTime);
+      onTimeUpdate?.(currentTime);
     }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, [currentTime, currentVideoTime, onTimeUpdate]);
 
   return (
     <div className="video-player bg-transparent rounded-2xl overflow-hidden">
       <div className="video-container relative">
-        {firstVideoClip ? (
+        {videoClip ? (
           <div className="relative">
-            {/* Simple native HTML5 video element */}
-            <video
-              ref={videoRef}
-              key={`video-${firstVideoClip?.id || 'placeholder'}`}
-              className="w-full h-auto rounded-xl shadow-2xl"
+            {/* Video element for Video.js */}
+            <div
+              key={`video-container-${videoClip.path}`}
+              className="w-full h-auto rounded-xl shadow-2xl bg-black"
               style={{
                 minHeight: '300px',
                 maxHeight: '70vh'
               }}
-              src={getVideoUrl(firstVideoClip.path)}
-              preload="metadata"
-              onLoadedMetadata={(e) => {
-                const video = e.currentTarget;
-                if (video.duration) {
-                  setDuration(video.duration);
-                  onVideoDurationUpdate?.(video.duration);
-                }
-              }}
-              onTimeUpdate={handleTimeUpdate}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onEnded={() => setIsPlaying(false)}
-              onError={(e) => console.error('Video error:', e)}
-            />
+            >
+              {/* Video element for Video.js */}
+              <video
+                ref={videoRef}
+                className="video-js vjs-default-skin"
+                controls
+                preload="metadata"
+                width="100%"
+                height="auto"
+                data-setup="{}"
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  minHeight: '300px',
+                  maxHeight: '70vh'
+                }}
+              />
+            </div>
 
-            {/* Custom overlay for better UX */}
-            <div className="absolute inset-0 pointer-events-none rounded-xl overflow-hidden">
-              <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-lg text-sm font-medium backdrop-blur-sm">
-                {firstVideoClip.name}
-              </div>
-
-              {/* Keyboard shortcuts hint */}
-              <div className="absolute bottom-4 right-4 bg-black/50 text-white px-3 py-1 rounded-lg text-xs backdrop-blur-sm opacity-60 hover:opacity-100 transition-opacity">
-                <div className="flex items-center space-x-2">
-                  <span>⌨️</span>
-                  <span>← → 5s, Space Play/Pause, Home/End</span>
+            {/* Loading indicator */}
+            {isLoadingVideo && (
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center backdrop-blur-sm rounded-xl">
+                <div className="bg-black/70 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>
+                    {processingVideo
+                      ? 'AI Processing Video...'
+                      : 'Loading video...'
+                    }
+                  </span>
                 </div>
               </div>
+            )}
+
+            {/* AI Processing indicator */}
+            {processingVideo && !isLoadingVideo && (
+              <div className="absolute inset-0 bg-blue-900/30 flex items-center justify-center backdrop-blur-sm rounded-xl">
+                <div className="bg-blue-900/90 text-white px-6 py-4 rounded-lg flex flex-col items-center space-y-3">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                  <div className="text-center">
+                    <div className="text-lg font-semibold">AI Processing Video</div>
+                    <div className="text-sm opacity-80">Please wait while we process your request...</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Error indicator */}
+            {error && (
+              <div className="absolute inset-0 bg-red-900/30 flex items-center justify-center backdrop-blur-sm rounded-xl">
+                <div className="bg-red-900/90 text-white px-4 py-2 rounded-lg flex flex-col items-center space-y-3">
+                  <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div className="text-center">
+                    <div className="font-semibold">Video Error</div>
+                    <div className="text-sm opacity-80">{error}</div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => {
+                        console.log('🎬 VideoPlayer: Retry requested');
+                        setError(null);
+                      }}
+                      className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-sm transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Video info overlay */}
+            <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-lg text-sm font-medium backdrop-blur-sm">
+              {videoClip.name}
             </div>
+
+            {/* Debug info */}
+            {process.env.NODE_ENV === 'development' && (
+              <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-lg text-xs backdrop-blur-sm">
+                <div>Player: Video.js</div>
+                <div>Duration: {duration.toFixed(2)}s</div>
+                <div>Current Time: {currentVideoTime.toFixed(2)}s</div>
+                <div>Playing: {isPlaying ? 'Yes' : 'No'}</div>
+                <div>Loading: {isLoadingVideo ? 'Yes' : 'No'}</div>
+                <div>Processing: {processingVideo ? 'Yes' : 'No'}</div>
+                <div>Current Path: {videoClip?.path || 'None'}</div>
+                <div className="mt-2 text-xs opacity-70">
+                  Using Video.js with native controls
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="video-placeholder flex items-center justify-center h-96 bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl border-2 border-dashed border-gray-600/50 backdrop-blur-sm transition-all duration-300 hover:border-purple-500/50 hover:bg-gray-800/70">
@@ -199,70 +304,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ project, currentTime, onTimeU
           </div>
         )}
       </div>
-
-      {firstVideoClip && (
-        <div className="video-controls mt-6 p-6 bg-black/20 rounded-2xl border border-white/10 shadow-xl">
-          <div className="flex items-center space-x-6">
-            {/* Play/Pause Button */}
-            <button
-              onClick={handlePlayPause}
-              className="w-14 h-14 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 flex items-center justify-center text-white transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-blue-500/25"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                </svg>
-              )}
-            </button>
-
-            {/* Time Display and Progress Bar */}
-            <div className="flex-1 space-y-3">
-              <div className="flex items-center justify-between text-sm text-gray-300">
-                <span className="font-mono">{formatTime(currentVideoTime)}</span>
-                <span className="text-gray-500">/</span>
-                <span className="font-mono">{formatTime(duration)}</span>
-              </div>
-              <div className="relative">
-                <input
-                  type="range"
-                  min="0"
-                  max={duration || 0}
-                  value={currentVideoTime}
-                  onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                  className="w-full h-3 bg-gray-700/50 rounded-xl appearance-none cursor-pointer slider"
-                  style={{
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 ${((currentVideoTime) / (duration || 1)) * 100}%, #4b5563 100%)`
-                  }}
-                />
-                <div className="absolute top-0 left-0 h-3 bg-blue-500 rounded-xl transition-all duration-100 ease-out"
-                     style={{ width: `${((currentVideoTime) / (duration || 1)) * 100}%` }}>
-                </div>
-              </div>
-            </div>
-
-            {/* Volume Control */}
-            <div className="flex items-center space-x-3">
-              <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.784L4.5 13.5H2a1 1 0 01-1-1v-5a1 1 0 011-1h2.5l3.883-3.284A1 1 0 019.383 3.076zM12.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-4.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm3.536 1.05a1 1 0 011.414 0A6.973 6.973 0 0121 10a6.973 6.973 0 01-3.536 6.021 1 1 0 01-1.414-1.414A4.973 4.973 0 0019 10c0-1.38-.56-2.63-1.464-3.536a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                className="w-20 h-2 bg-gray-700/50 rounded-lg appearance-none cursor-pointer slider"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

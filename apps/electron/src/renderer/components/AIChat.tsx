@@ -3,6 +3,7 @@ import { ChatMessage } from '../types';
 import ChatMessageComponent from './ChatMessage';
 import CommandSuggestions from './CommandSuggestions';
 import { ChevronUp, ChevronDown } from 'lucide-react';
+import { useAIChatStore } from '../stores/aiChatStore';
 
 interface AIChatProps {
   messages: ChatMessage[];
@@ -13,10 +14,12 @@ interface AIChatProps {
 
 const AIChat: React.FC<AIChatProps> = ({ messages, onSendMessage, expanded, onToggle }) => {
   const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isQuickCommandsExpanded, setIsQuickCommandsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Get AI processing state from store
+  const { isLoading, processingVideo } = useAIChatStore();
 
   const quickCommands = [
     { icon: '✂️', label: 'Trim', command: 'Trim the video to 30 seconds' },
@@ -40,12 +43,12 @@ const AIChat: React.FC<AIChatProps> = ({ messages, onSendMessage, expanded, onTo
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
-    setIsLoading(true);
+    // setIsLoading(true); // This is now managed by the store
     try {
       await onSendMessage(inputValue);
       setInputValue('');
     } finally {
-      setIsLoading(false);
+      // setIsLoading(false); // This is now managed by the store
     }
   };
 
@@ -67,14 +70,28 @@ const AIChat: React.FC<AIChatProps> = ({ messages, onSendMessage, expanded, onTo
       <div className="chat-header bg-gradient-to-r from-purple-600/20 to-blue-600/20 px-6 py-4 border-b border-white/10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-3 h-3 bg-gradient-to-r from-green-400 to-emerald-400 rounded-full animate-pulse shadow-lg"></div>
+            <div className={`w-3 h-3 rounded-full shadow-lg ${
+              processingVideo
+                ? 'bg-gradient-to-r from-blue-400 to-purple-400 animate-pulse'
+                : isLoading
+                ? 'bg-gradient-to-r from-yellow-400 to-orange-400 animate-pulse'
+                : 'bg-gradient-to-r from-green-400 to-emerald-400'
+            }`}></div>
             <div>
               <h3 className="text-white font-semibold text-lg">AI Command Panel</h3>
               <p className="text-gray-300 text-sm">
-                Describe what you want to do with your video
+                {processingVideo
+                  ? 'AI is processing your video...'
+                  : isLoading
+                  ? 'Processing your request...'
+                  : 'Describe what you want to do with your video'
+                }
               </p>
             </div>
           </div>
+
+          {/* Progress Bar */}
+          {/* The following block was removed as per the edit hint */}
 
           <button
             onClick={() => {
@@ -138,28 +155,42 @@ const AIChat: React.FC<AIChatProps> = ({ messages, onSendMessage, expanded, onTo
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describe what you want to do with your video..."
-              className="w-full bg-white/5 text-white placeholder-gray-400 rounded-2xl px-4 py-3 pr-16 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:bg-white/10 transition-all duration-200 border border-white/10"
+              placeholder={
+                processingVideo
+                  ? 'AI is processing your video... Please wait...'
+                  : isLoading
+                  ? 'Processing your request... Please wait...'
+                  : 'Describe what you want to do with your video...'
+              }
+              className={`w-full bg-white/5 text-white placeholder-gray-400 rounded-2xl px-4 py-3 pr-16 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:bg-white/10 transition-all duration-200 border border-white/10 ${
+                isLoading || processingVideo ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               rows={2}
-              disabled={isLoading}
+              disabled={isLoading || processingVideo}
             />
             <button
               onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isLoading}
+              disabled={!inputValue.trim() || isLoading || processingVideo}
               className="absolute right-2 top-1/2 transform -translate-y-1/2 w-12 h-12 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:from-gray-600 disabled:to-gray-700 text-white font-medium rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              {isLoading ? (
+              {isLoading || processingVideo ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               ) : (
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               )}
             </button>
           </div>
 
           <div className="mt-3 text-xs text-gray-500 text-center">
-            Press <kbd className="px-2 py-1 bg-white/10 rounded text-gray-300">Enter</kbd> to send, <kbd className="px-2 py-1 bg-white/10 rounded text-gray-300">Shift+Enter</kbd> for new line
+            {processingVideo ? (
+              <span className="text-blue-400">🔄 AI is processing your video...</span>
+            ) : isLoading ? (
+              <span className="text-yellow-400">🔄 Processing your request...</span>
+            ) : (
+              <span className="text-gray-400">💡 Try: "Make this video brighter" or "Add a slow motion effect"</span>
+            )}
           </div>
         </div>
 

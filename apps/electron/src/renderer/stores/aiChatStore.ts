@@ -1,27 +1,26 @@
 import { create } from 'zustand';
-import { ChatMessage, AICommand } from '../types';
+import { ChatMessage } from '../types';
 import { api } from '../services/api';
 
 interface AIChatState {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
-  aiStatus: 'idle' | 'processing' | 'ready' | 'error';
+  processingVideo: boolean;
 
   // Actions
   sendMessage: (content: string, projectContext?: any) => Promise<void>;
   addMessage: (message: ChatMessage) => void;
   updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
   clearMessages: () => void;
-  getAIStatus: () => Promise<void>;
-  clearError: () => void;
+  setProcessingVideo: (processing: boolean) => void;
 }
 
 export const useAIChatStore = create<AIChatState>((set, get) => ({
   messages: [],
   isLoading: false,
   error: null,
-  aiStatus: 'idle',
+  processingVideo: false,
 
   sendMessage: async (content: string, projectContext?: any) => {
     const userMessage: ChatMessage = {
@@ -36,19 +35,44 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
     set(state => ({
       messages: [...state.messages, userMessage],
       isLoading: true,
-      error: null
+      error: null,
+      processingVideo: true // Start video processing
     }));
 
     try {
       // Send to AI service
-      const response = await api.post('/api/ai/chat', {
+      const response = await api.post('/ai/chat', {
         message: content,
         projectContext
       });
 
       const aiResponse = response.data.aiResponse;
 
-      // Add AI response message
+      // If AI processed a video and we have a result
+      if (aiResponse.ffmpegResult && aiResponse.operation) {
+        console.log('🎬 AI processed video result received:', aiResponse);
+
+        // Add AI response message
+        const aiMessage: ChatMessage = {
+          id: Math.random().toString(36).substr(2, 9),
+          type: 'assistant',
+          content: `✅ Video processed successfully! The updated video is now available in the player.`,
+          timestamp: new Date(),
+          status: 'completed',
+          ffmpegCommand: JSON.stringify(aiResponse.operation)
+        };
+
+        set(state => ({
+          messages: [...state.messages, aiMessage],
+          isLoading: false,
+          processingVideo: false
+        }));
+
+        console.log('🎬 AI message updated, video processing completed');
+        return;
+      }
+
+      // Add AI response message for non-video operations
       const aiMessage: ChatMessage = {
         id: Math.random().toString(36).substr(2, 9),
         type: 'assistant',
@@ -60,10 +84,11 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
 
       set(state => ({
         messages: [...state.messages, aiMessage],
-        isLoading: false
+        isLoading: false,
+        processingVideo: false
       }));
 
-      // If AI generated a command, update the user message status
+      // Update user message status
       if (aiResponse.command) {
         set(state => ({
           messages: state.messages.map(msg =>
@@ -83,7 +108,8 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
             : msg
         ),
         error: error instanceof Error ? error.message : 'Failed to send message',
-        isLoading: false
+        isLoading: false,
+        processingVideo: false
       }));
     }
   },
@@ -108,24 +134,7 @@ export const useAIChatStore = create<AIChatState>((set, get) => ({
     set({ messages: [] });
   },
 
-  getAIStatus: async () => {
-    try {
-      const response = await api.get('/api/ai/status');
-      const status = response.data;
-
-      set({
-        aiStatus: status.available ? 'ready' : 'error',
-        error: status.available ? null : 'AI service not available'
-      });
-    } catch (error) {
-      set({
-        aiStatus: 'error',
-        error: 'Failed to get AI status'
-      });
-    }
-  },
-
-  clearError: () => {
-    set({ error: null });
+  setProcessingVideo: (processing: boolean) => {
+    set({ processingVideo: processing });
   }
 }));

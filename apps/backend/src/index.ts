@@ -7,7 +7,7 @@ import path from 'path';
 import { videoRoutes } from './routes/video';
 import { aiRoutes } from './routes/ai';
 import { projectRoutes } from './routes/project';
-import { setupWebSocket } from './websocket';
+import { setupWebSocket, setWebSocketServer } from './websocket';
 
 const app = express();
 const server = createServer(app);
@@ -75,6 +75,7 @@ app.get('/health', async (req, res) => {
 
 // WebSocket setup
 setupWebSocket(wss);
+setWebSocketServer(wss);
 
 const PORT = process.env.PORT || 3001;
 

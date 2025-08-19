@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Editor - WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .operation {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .operation.completed { border-color: #28a745; background-color: #d4edda; }
+        .operation.processing { border-color: #ffc107; background-color: #fff3cd; }
+        .operation.error { border-color: #dc3545; background-color: #f8d7da; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 AI Video Editor - WebSocket Test</h1>
+
+        <div id="status" class="status disconnected">Disconnected</div>
+
+        <div>
+            <button id="connectBtn" onclick="connect()">Connect to WebSocket</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+            <button id="testBtn" onclick="testAICommand()" disabled>Test AI Command</button>
+        </div>
+
+        <h3>Active Operations</h3>
+        <div id="operations"></div>
+
+        <h3>WebSocket Log</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        let operations = new Map();
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const testBtn = document.getElementById('testBtn');
+
+            if (connected) {
+                statusDiv.textContent = 'Connected to WebSocket';
+                statusDiv.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                testBtn.disabled = false;
+            } else {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                testBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            log('Connecting to WebSocket...');
+            ws = new WebSocket('ws://localhost:3001');
+
+            ws.onopen = function() {
+                log('WebSocket connected!');
+                updateStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`Received: ${JSON.stringify(data, null, 2)}`);
+
+                    if (data.type === 'ffmpeg_progress') {
+                        updateOperation(data.operation);
+                    }
+                } catch (error) {
+                    log(`Error parsing message: ${error.message}`);
+                }
+            };
+
+            ws.onclose = function() {
+                log('WebSocket disconnected');
+                updateStatus(false);
+                ws = null;
+            };
+
+            ws.onerror = function(error) {
+                log(`WebSocket error: ${error.message}`);
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function updateOperation(operation) {
+            const operationsDiv = document.getElementById('operations');
+            const operationId = operation.id;
+
+            if (!operations.has(operationId)) {
+                operations.set(operationId, operation);
+            } else {
+                Object.assign(operations.get(operationId), operation);
+            }
+
+            renderOperations();
+        }
+
+        function renderOperations() {
+            const operationsDiv = document.getElementById('operations');
+            operationsDiv.innerHTML = '';
+
+            operations.forEach((operation, id) => {
+                const operationDiv = document.createElement('div');
+                operationDiv.className = `operation ${operation.status}`;
+
+                const progressPercent = operation.progress || 0;
+
+                operationDiv.innerHTML = `
+                    <h4>Operation: ${operation.type} (${id})</h4>
+                    <p><strong>Status:</strong> ${operation.status}</p>
+                    <p><strong>Input:</strong> ${operation.inputFile || 'N/A'}</p>
+                    <p><strong>Output:</strong> ${operation.outputFile || 'N/A'}</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progressPercent}%">
+                            ${progressPercent}%
+                        </div>
+                    </div>
+                    <p><strong>Parameters:</strong> ${JSON.stringify(operation.parameters)}</p>
+                `;
+
+                operationsDiv.appendChild(operationDiv);
+            });
+        }
+
+        async function testAICommand() {
+            log('Testing AI command...');
+
+            try {
+                const response = await fetch('http://localhost:3001/api/ai/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: 'trim the video from 5 seconds to 20 seconds',
+                        projectContext: {
+                            videoTracks: [{
+                                path: 'uploads/video-1755555769013-904576334.mp4',
+                                filePath: 'uploads/video-1755555769013-904576334.mp4'
+                            }]
+                        }
+                    })
+                });
+
+                const result = await response.json();
+                log(`AI Response: ${JSON.stringify(result, null, 2)}`);
+
+                if (result.success && result.aiResponse.operation) {
+                    updateOperation(result.aiResponse.operation);
+                }
+            } catch (error) {
+                log(`Error testing AI command: ${error.message}`);
+            }
+        }
+
+        // Auto-connect on page load
+        window.onload = function() {
+            log('Page loaded, ready to connect');
+        };
+    </script>
+</body>
+</html>

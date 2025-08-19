@@ -4,35 +4,45 @@ import { generateId } from '@ai-video-editor/shared';
 
 export class AIService {
   private ollama: Ollama;
-  private modelName: string = 'llama3.1:8b'; // Default model
+  private modelName: string = 'mistral:latest'; // Default model
 
   constructor() {
     this.ollama = new Ollama({
-      host: process.env.OLLAMA_HOST || 'http://localhost:11434'
+      host: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434'
     });
   }
 
-  async getStatus(): Promise<{ status: string; model: string; available: boolean }> {
+  async getStatus(): Promise<{ status: string; model: string; available: boolean; error?: string }> {
     try {
+      console.log('Checking Ollama status...');
       const models = await this.ollama.list();
+      console.log('Available models:', models.models.map(m => m.name));
+
       const model = models.models.find(m => m.name === this.modelName);
+      const status = model ? 'ready' : 'model_not_found';
+
+      console.log(`Status: ${status}, Model: ${this.modelName}, Available: ${!!model}`);
 
       return {
-        status: 'ready',
+        status,
         model: this.modelName,
-        available: !!model
+        available: !!model,
+        error: model ? undefined : `Model ${this.modelName} not found. Available models: ${models.models.map(m => m.name).join(', ')}`
       };
     } catch (error) {
+      console.error('Error checking Ollama status:', error);
       return {
         status: 'error',
         model: this.modelName,
-        available: false
+        available: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
 
   async processMessage(message: string, projectContext?: any): Promise<AICommand> {
     try {
+      console.log(`Processing AI message with model: ${this.modelName}`);
       const prompt = this.buildPrompt(message, projectContext);
 
       const response = await this.ollama.chat({
@@ -50,6 +60,7 @@ export class AIService {
       });
 
       const aiResponse = response.message.content;
+      console.log(`AI response received: ${aiResponse.substring(0, 100)}...`);
       const operation = this.parseAIResponse(aiResponse, message);
 
       return {
@@ -59,7 +70,11 @@ export class AIService {
       };
     } catch (error) {
       console.error('AI processing error:', error);
-      throw new Error('Failed to process AI message');
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      throw new Error(`Failed to process AI message: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -97,20 +112,37 @@ Only respond with valid JSON.`;
     return prompt;
   }
 
-  private parseAIResponse(aiResponse: string, originalCommand: string): FFmpegOperation {
+    private parseAIResponse(aiResponse: string, originalCommand: string): FFmpegOperation {
     try {
-      // Try to parse JSON response
-      const parsed = JSON.parse(aiResponse);
+      console.log('Parsing AI response:', aiResponse);
 
-      return {
-        id: generateId(),
-        type: this.mapOperationType(parsed.operation),
-        parameters: parsed.parameters || {},
-        inputFile: '', // Will be set by caller
-        outputFile: '', // Will be set by caller
-        status: 'pending'
-      };
+      // Try to extract JSON from the response (handle extra text)
+      let jsonStart = aiResponse.indexOf('{');
+      let jsonEnd = aiResponse.lastIndexOf('}');
+
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const jsonString = aiResponse.substring(jsonStart, jsonEnd + 1);
+        console.log('Extracted JSON string:', jsonString);
+
+        const parsed = JSON.parse(jsonString);
+        console.log('Parsed JSON:', parsed);
+
+        const operation: FFmpegOperation = {
+          id: generateId(),
+          type: this.mapOperationType(parsed.operation),
+          parameters: parsed.parameters || {},
+          inputFile: '', // Will be set by caller
+          outputFile: '', // Will be set by caller
+          status: 'pending'
+        };
+
+        console.log('Generated operation:', operation);
+        return operation;
+      } else {
+        throw new Error('No JSON found in response');
+      }
     } catch (error) {
+      console.log('JSON parsing failed, using fallback:', error);
       // Fallback to command parsing
       return this.fallbackCommandParsing(originalCommand);
     }
